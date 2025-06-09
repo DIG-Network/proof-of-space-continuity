@@ -22,7 +22,10 @@
     "ava": "^6.0.1"
   },
   "ava": {
-    "timeout": "3m"
+    "timeout": "3m",
+    "files": [
+      "__test__/**/*"
+    ]
   },
   "engines": {
     "node": ">= 10"

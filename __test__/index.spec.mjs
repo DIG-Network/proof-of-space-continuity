@@ -1,71 +1,35 @@
 import test from 'ava'
 
 import { 
-  helloWorld, 
-  greet, 
-  add, 
-  computeProofOfWork, 
   computeProofOfWorkAsync, 
   verifyProofOfWork, 
   hashToDifficulty,
-  difficultyToTargetHex,
-  startProofOfWorkCancellable
+  difficultyToTargetHex
 } from '../index.js'
 
-test('helloWorld function returns correct greeting', (t) => {
-  const result = helloWorld()
-  t.is(result, 'Hello World!')
-})
+// Helper function to wait for completion and get result
+async function waitForCompletion(handle, timeoutMs = 30000) {
+  const start = Date.now()
+  while (Date.now() - start < timeoutMs) {
+    if (handle.isCompleted()) {
+      return handle.getResult()
+    }
+    if (handle.hasError()) {
+      throw new Error(handle.getError())
+    }
+    await new Promise(resolve => setTimeout(resolve, 10))
+  }
+  throw new Error('Timeout waiting for completion')
+}
 
-test('greet function returns personalized greeting', (t) => {
-  const result = greet('Alice')
-  t.is(result, 'Hello, Alice!')
-})
 
-test('greet function works with different names', (t) => {
-  const result = greet('Bob')
-  t.is(result, 'Hello, Bob!')
-})
-
-test('add function adds two numbers correctly', (t) => {
-  const result = add(2, 3)
-  t.is(result, 5)
-})
-
-test('add function works with negative numbers', (t) => {
-  const result = add(-1, 1)
-  t.is(result, 0)
-})
-
-test('add function works with zero', (t) => {
-  const result = add(0, 5)
-  t.is(result, 5)
-})
-
-test('computeProofOfWork finds valid nonce for low difficulty', (t) => {
-  const entropySeed = Buffer.from('test_entropy_seed_for_mining_12345', 'utf-8')
-  const difficulty = 1.0 // Bitcoin difficulty 1.0 (easiest)
-  
-  const result = computeProofOfWork(entropySeed, difficulty, 100000)
-  
-  t.truthy(result)
-  t.is(typeof result.nonce, 'bigint')
-  t.is(typeof result.hash, 'string')
-  t.is(typeof result.attempts, 'bigint')
-  t.is(typeof result.time_ms, 'number')
-  t.is(result.difficulty, difficulty)
-  t.is(typeof result.target, 'string')
-  
-  // Verify the result
-  const isValid = verifyProofOfWork(entropySeed, Number(result.nonce), difficulty)
-  t.true(isValid)
-})
 
 test('computeProofOfWorkAsync finds valid nonce for low difficulty', async (t) => {
   const entropySeed = Buffer.from('async_test_entropy_seed_123456', 'utf-8')
   const difficulty = 1.0 // Bitcoin difficulty 1.0 (easiest)
   
-  const result = await computeProofOfWorkAsync(entropySeed, difficulty, 100000)
+  const handle = computeProofOfWorkAsync(entropySeed, difficulty, 100000)
+  const result = await waitForCompletion(handle)
   
   t.truthy(result)
   t.is(typeof result.nonce, 'bigint')
@@ -80,12 +44,13 @@ test('computeProofOfWorkAsync finds valid nonce for low difficulty', async (t) =
   t.true(isValid)
 })
 
-test('verifyProofOfWork correctly validates nonces', (t) => {
+test('verifyProofOfWork correctly validates nonces', async (t) => {
   const entropySeed = Buffer.from('verification_test_entropy', 'utf-8')
   const difficulty = 1.0 // Bitcoin difficulty 1.0
   
   // First find a valid nonce
-  const result = computeProofOfWork(entropySeed, difficulty, 50000)
+  const handle = computeProofOfWorkAsync(entropySeed, difficulty, 50000)
+  const result = await waitForCompletion(handle)
   const validNonce = Number(result.nonce)
   
   // Test valid nonce
@@ -134,13 +99,15 @@ test('difficultyToTargetHex converts difficulty to target', (t) => {
   t.true(target2 < target1)
 })
 
-test('proof of work fails when max attempts exceeded', (t) => {
+test('proof of work fails when max attempts exceeded', async (t) => {
   const entropySeed = Buffer.from('impossible_test_entropy', 'utf-8')
   const difficulty = 1000000.0 // Very high difficulty, should be impossible with low attempts
   const maxAttempts = 10 // Very low max attempts
   
-  t.throws(() => {
-    computeProofOfWork(entropySeed, difficulty, maxAttempts)
+  const handle = computeProofOfWorkAsync(entropySeed, difficulty, maxAttempts)
+  
+  await t.throwsAsync(async () => {
+    await waitForCompletion(handle)
   }, { message: /Failed to find solution after \d+ attempts/ })
 })
 
@@ -149,27 +116,31 @@ test('proof of work fails with invalid difficulty', (t) => {
   
   // Test negative difficulty
   t.throws(() => {
-    computeProofOfWork(entropySeed, -1.0, 1000)
+    computeProofOfWorkAsync(entropySeed, -1.0, 1000)
   }, { message: /Difficulty must be greater than 0/ })
   
   // Test zero difficulty
   t.throws(() => {
-    computeProofOfWork(entropySeed, 0.0, 1000)
+    computeProofOfWorkAsync(entropySeed, 0.0, 1000)
   }, { message: /Difficulty must be greater than 0/ })
 })
 
-test('startProofOfWorkCancellable returns a handle', (t) => {
-  const entropySeed = Buffer.from('cancellable_test_entropy', 'utf-8')
+test('handle provides correct interface', (t) => {
+  const entropySeed = Buffer.from('handle_test_entropy', 'utf-8')
   const difficulty = 1.0 // Low difficulty for quick completion
   
-  const handle = startProofOfWorkCancellable(entropySeed, difficulty, 50000)
+  const handle = computeProofOfWorkAsync(entropySeed, difficulty, 50000)
   
   t.truthy(handle)
   t.is(typeof handle.cancel, 'function')
   t.is(typeof handle.isCancelled, 'function')
   t.is(typeof handle.getAttempts, 'function')
   t.is(typeof handle.isCompleted, 'function')
+  t.is(typeof handle.hasError, 'function')
+  t.is(typeof handle.getError, 'function')
+  t.is(typeof handle.getResult, 'function')
   t.is(typeof handle.getProgress, 'function')
+  t.is(typeof handle.getDifficulty, 'function')
   
   // Clean up
   handle.cancel()
@@ -179,7 +150,7 @@ test('cancellable proof of work can be cancelled', (t) => {
   const entropySeed = Buffer.from('cancel_test_entropy_hard', 'utf-8')
   const difficulty = 10000.0 // High difficulty to ensure it runs long enough
   
-  const handle = startProofOfWorkCancellable(entropySeed, difficulty, 10000000)
+  const handle = computeProofOfWorkAsync(entropySeed, difficulty, 10000000)
   
   // Cancel immediately
   handle.cancel()
@@ -192,7 +163,7 @@ test('cancellable proof of work reports progress', async (t) => {
   const entropySeed = Buffer.from('progress_test_entropy', 'utf-8')
   const difficulty = 100.0 // Medium difficulty
   
-  const handle = startProofOfWorkCancellable(entropySeed, difficulty, 50000)
+  const handle = computeProofOfWorkAsync(entropySeed, difficulty, 50000)
   
   // Wait a bit for some progress
   await new Promise(resolve => setTimeout(resolve, 100))
@@ -212,7 +183,7 @@ test('cancellable proof of work detects completion', async (t) => {
   const entropySeed = Buffer.from('completion_test_entropy', 'utf-8')
   const difficulty = 1.0 // Very low difficulty for quick completion
   
-  const handle = startProofOfWorkCancellable(entropySeed, difficulty, 100000)
+  const handle = computeProofOfWorkAsync(entropySeed, difficulty, 100000)
   
   // Wait for completion (should be quick with difficulty 1.0)
   let completed = false
@@ -225,14 +196,20 @@ test('cancellable proof of work detects completion', async (t) => {
   }
   
   t.true(completed, 'Proof of work should complete with low difficulty')
+  
+  // Get the result and verify it
+  const result = handle.getResult()
+  t.truthy(result)
+  t.is(typeof result.nonce, 'bigint')
 })
 
-test('proof of work with logging enabled works correctly', (t) => {
+test('proof of work with logging enabled works correctly', async (t) => {
   const entropySeed = Buffer.from('logging_test_entropy', 'utf-8')
   const difficulty = 1.0 // Low difficulty for quick completion
   
   // Test with logging enabled - should not throw and should find solution
-  const result = computeProofOfWork(entropySeed, difficulty, 100000, true)
+  const handle = computeProofOfWorkAsync(entropySeed, difficulty, 100000, true)
+  const result = await waitForCompletion(handle)
   
   t.truthy(result)
   t.is(typeof result.nonce, 'bigint')
@@ -247,15 +224,17 @@ test('proof of work with logging enabled works correctly', (t) => {
   t.true(isValid)
 })
 
-test('double SHA-256 vs single SHA-256 produces different results', (t) => {
+test('double SHA-256 vs single SHA-256 produces different results', async (t) => {
   const entropySeed = Buffer.from('sha_comparison_test', 'utf-8')
   const difficulty = 1.0
   
   // Test with double SHA-256 (Bitcoin style)
-  const resultDouble = computeProofOfWork(entropySeed, difficulty, 100000, false, true)
+  const handleDouble = computeProofOfWorkAsync(entropySeed, difficulty, 100000, false, true)
+  const resultDouble = await waitForCompletion(handleDouble)
   
   // Test with single SHA-256
-  const resultSingle = computeProofOfWork(entropySeed, difficulty, 100000, false, false)
+  const handleSingle = computeProofOfWorkAsync(entropySeed, difficulty, 100000, false, false)
+  const resultSingle = await waitForCompletion(handleSingle)
   
   // Both should succeed but produce different results
   t.truthy(resultDouble)
@@ -269,4 +248,16 @@ test('double SHA-256 vs single SHA-256 produces different results', (t) => {
   // Cross-verification should fail
   t.false(verifyProofOfWork(entropySeed, Number(resultDouble.nonce), difficulty, false))
   t.false(verifyProofOfWork(entropySeed, Number(resultSingle.nonce), difficulty, true))
+})
+
+test('handle can get difficulty', (t) => {
+  const entropySeed = Buffer.from('difficulty_getter_test', 'utf-8')
+  const difficulty = 2.5
+  
+  const handle = computeProofOfWorkAsync(entropySeed, difficulty, 1000)
+  
+  t.is(handle.getDifficulty(), difficulty)
+  
+  // Clean up
+  handle.cancel()
 }) 

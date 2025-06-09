@@ -29,7 +29,6 @@ export interface ProofOfWorkProgress {
   /** Estimated attempts per second */
   attempts_per_second: number
 }
-
 /**
  * Computes proof of work asynchronously using Bitcoin's target-based system.
  * This function returns a handle for cancellation and unlimited attempts by default.
@@ -84,4 +83,6 @@ export declare class ProofOfWorkHandle {
   getResult(): ProofOfWorkResult | null
   /** Get progress information */
   getProgress(): ProofOfWorkProgress
+  /** Get the difficulty level for this computation */
+  getDifficulty(): number
 }
