@@ -7,8 +7,8 @@ import {
   difficultyToTargetHex
 } from '../index.js'
 
-// Helper function to wait for completion and get result
-async function waitForCompletion(handle, timeoutMs = 30000) {
+// Helper function to wait for completion and get result (for comparison)
+async function waitForCompletionPolling(handle, timeoutMs = 30000) {
   const start = Date.now()
   while (Date.now() - start < timeoutMs) {
     if (handle.isCompleted()) {
@@ -29,7 +29,7 @@ test('computeProofOfWorkAsync finds valid nonce for low difficulty', async (t) =
   const difficulty = 1.0 // Bitcoin difficulty 1.0 (easiest)
   
   const handle = computeProofOfWorkAsync(entropySeed, difficulty, 100000)
-  const result = await waitForCompletion(handle)
+  const result = await waitForCompletionPolling(handle)
   
   t.truthy(result)
   t.is(typeof result.nonce, 'bigint')
@@ -44,13 +44,52 @@ test('computeProofOfWorkAsync finds valid nonce for low difficulty', async (t) =
   t.true(isValid)
 })
 
+test('waitForComplete method works correctly on successful computation', async (t) => {
+  const entropySeed = Buffer.from('waitForComplete_test_seed', 'utf-8')
+  const difficulty = 1.0 // Low difficulty for quick test
+  
+  const handle = computeProofOfWorkAsync(entropySeed, difficulty, 100000)
+  const waitResult = await handle.waitForComplete()
+  
+  t.truthy(waitResult)
+  t.is(waitResult.error, undefined)
+  t.truthy(waitResult.result)
+  t.is(typeof waitResult.result.nonce, 'bigint')
+  t.is(typeof waitResult.result.hash, 'string')
+  t.is(typeof waitResult.result.attempts, 'bigint')
+  t.is(typeof waitResult.result.time_ms, 'number')
+  t.is(waitResult.result.difficulty, difficulty)
+  t.is(typeof waitResult.result.target, 'string')
+  
+  // Verify the result
+  const isValid = verifyProofOfWork(entropySeed, Number(waitResult.result.nonce), difficulty)
+  t.true(isValid)
+})
+
+test('waitForComplete method handles cancelled computation', async (t) => {
+  const entropySeed = Buffer.from('cancel_test_seed', 'utf-8')
+  const difficulty = 10000.0 // High difficulty to allow cancellation
+  
+  const handle = computeProofOfWorkAsync(entropySeed, difficulty, 10000000)
+  
+  // Cancel immediately
+  handle.cancel()
+  
+  const waitResult = await handle.waitForComplete()
+  
+  t.truthy(waitResult)
+  t.truthy(waitResult.error)
+  t.is(waitResult.result, undefined)
+  t.true(waitResult.error.includes('cancelled'))
+})
+
 test('verifyProofOfWork correctly validates nonces', async (t) => {
   const entropySeed = Buffer.from('verification_test_entropy', 'utf-8')
   const difficulty = 1.0 // Bitcoin difficulty 1.0
   
   // First find a valid nonce
   const handle = computeProofOfWorkAsync(entropySeed, difficulty, 50000)
-  const result = await waitForCompletion(handle)
+  const result = await waitForCompletionPolling(handle)
   const validNonce = Number(result.nonce)
   
   // Test valid nonce
@@ -107,7 +146,7 @@ test('proof of work fails when max attempts exceeded', async (t) => {
   const handle = computeProofOfWorkAsync(entropySeed, difficulty, maxAttempts)
   
   await t.throwsAsync(async () => {
-    await waitForCompletion(handle)
+    await waitForCompletionPolling(handle)
   }, { message: /Failed to find solution after \d+ attempts/ })
 })
 
@@ -141,6 +180,7 @@ test('handle provides correct interface', (t) => {
   t.is(typeof handle.getResult, 'function')
   t.is(typeof handle.getProgress, 'function')
   t.is(typeof handle.getDifficulty, 'function')
+  t.is(typeof handle.waitForComplete, 'function')
   
   // Clean up
   handle.cancel()
@@ -209,7 +249,7 @@ test('proof of work with logging enabled works correctly', async (t) => {
   
   // Test with logging enabled - should not throw and should find solution
   const handle = computeProofOfWorkAsync(entropySeed, difficulty, 100000, true)
-  const result = await waitForCompletion(handle)
+  const result = await waitForCompletionPolling(handle)
   
   t.truthy(result)
   t.is(typeof result.nonce, 'bigint')
@@ -230,11 +270,11 @@ test('double SHA-256 vs single SHA-256 produces different results', async (t) =>
   
   // Test with double SHA-256 (Bitcoin style)
   const handleDouble = computeProofOfWorkAsync(entropySeed, difficulty, 100000, false, true)
-  const resultDouble = await waitForCompletion(handleDouble)
+  const resultDouble = await waitForCompletionPolling(handleDouble)
   
   // Test with single SHA-256
   const handleSingle = computeProofOfWorkAsync(entropySeed, difficulty, 100000, false, false)
-  const resultSingle = await waitForCompletion(handleSingle)
+  const resultSingle = await waitForCompletionPolling(handleSingle)
   
   // Both should succeed but produce different results
   t.truthy(resultDouble)
@@ -260,4 +300,28 @@ test('handle can get difficulty', (t) => {
   
   // Clean up
   handle.cancel()
-}) 
+})
+
+test('waitForComplete vs polling comparison', async (t) => {
+  const entropySeed = Buffer.from('comparison_test', 'utf-8')
+  const difficulty = 1.0
+  
+  // Test with waitForComplete
+  const handle1 = computeProofOfWorkAsync(entropySeed, difficulty, 100000)
+  const waitResult = await handle1.waitForComplete()
+  
+  // Test with polling
+  const handle2 = computeProofOfWorkAsync(entropySeed, difficulty, 100000)
+  const pollingResult = await waitForCompletionPolling(handle2)
+  
+  // Both should succeed
+  t.is(waitResult.error, undefined)
+  t.truthy(waitResult.result)
+  t.truthy(pollingResult)
+  
+  // Results should be identical for same input
+  t.is(waitResult.result.nonce, pollingResult.nonce)
+  t.is(waitResult.result.hash, pollingResult.hash)
+  t.is(waitResult.result.difficulty, pollingResult.difficulty)
+  t.is(waitResult.result.target, pollingResult.target)
+})

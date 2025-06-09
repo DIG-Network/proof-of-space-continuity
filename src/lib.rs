@@ -66,6 +66,15 @@ pub struct ProofOfWorkProgress {
     pub attempts_per_second: f64,
 }
 
+#[napi(object)]
+/// Result of waiting for proof of work completion
+pub struct ProofOfWorkWaitResult {
+    /// Error message if computation failed, undefined if successful
+    pub error: Option<String>,
+    /// Proof of work result if computation succeeded, undefined if failed
+    pub result: Option<ProofOfWorkResult>,
+}
+
 #[napi]
 /// Handle for cancelling a proof of work computation
 pub struct ProofOfWorkHandle {
@@ -148,6 +157,50 @@ impl ProofOfWorkHandle {
     #[napi]
     pub fn get_difficulty(&self) -> f64 {
         self.difficulty
+    }
+
+    /// Wait for the proof of work computation to complete and return [error, result]
+    #[napi]
+    pub async fn wait_for_complete(&self) -> ProofOfWorkWaitResult {
+        loop {
+            // Check if computation completed successfully
+            if self.is_completed() {
+                if let Some(result) = self.get_result() {
+                    return ProofOfWorkWaitResult {
+                        error: None,
+                        result: Some(result),
+                    };
+                } else if let Some(error) = self.get_error() {
+                    return ProofOfWorkWaitResult {
+                        error: Some(error),
+                        result: None,
+                    };
+                } else {
+                    return ProofOfWorkWaitResult {
+                        error: Some("Proof of work computation completed but no result or error found".to_string()),
+                        result: None,
+                    };
+                }
+            }
+
+            // Check if computation was cancelled or had an error
+            if self.has_error() {
+                if let Some(error) = self.get_error() {
+                    return ProofOfWorkWaitResult {
+                        error: Some(error),
+                        result: None,
+                    };
+                } else {
+                    return ProofOfWorkWaitResult {
+                        error: Some("Proof of work computation failed with unknown error".to_string()),
+                        result: None,
+                    };
+                }
+            }
+
+            // Sleep for a short time before checking again
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
     }
 }
 
