@@ -987,7 +987,7 @@ fn verify_merkle_proof(
     }
 
     let mut current_hash = leaf_hash.as_ref().to_vec();
-    let mut current_index = leaf_index;
+    let mut _current_index = leaf_index;
 
     // Process each proof element
     for i in (0..proof.len()).step_by(33) {
@@ -1008,7 +1008,7 @@ fn verify_merkle_proof(
         };
 
         current_hash = combined_hash.to_vec();
-        current_index /= 2;
+        _current_index /= 2;
     }
 
     // Final hash should match the merkle root
