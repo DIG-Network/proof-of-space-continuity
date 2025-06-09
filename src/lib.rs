@@ -716,7 +716,10 @@ impl HashChain {
             } else {
                 // Return empty chain structure for initialized but empty chains
                 Some(ChainData {
-                    anchored_commitment: anchored_commitment_hex.as_deref().unwrap_or("").to_string(),
+                    anchored_commitment: anchored_commitment_hex
+                        .as_deref()
+                        .unwrap_or("")
+                        .to_string(),
                     initial_block_height: self.initial_block_height as f64,
                     initial_block_hash: hex::encode(self.initial_block_hash.as_ref()),
                     total_chunks: self.total_chunks as f64,
