@@ -171,8 +171,8 @@ pub struct HashChainInfo {
     pub initial_block_height: f64,
 }
 
-#[napi]
 /// Main HashChain implementation for Proof of Storage Continuity
+#[napi]
 pub struct HashChain {
     /// Prover's public key
     public_key: Buffer,
@@ -395,16 +395,36 @@ impl HashChain {
         }
 
         // Create new physical access commitment
-        let new_commitment = create_physical_access_commitment(
+        let mut new_commitment = create_physical_access_commitment(
             self.data_file_path.as_ref().unwrap(),
             self.current_commitment.as_ref().unwrap(),
             &block_hash,
             self.total_chunks,
         )?;
 
-        // Update state
+        // Set proper block height
+        new_commitment.block_height = (self.initial_block_height + self.chain_length as u64 + 1) as f64;
+
+        // Append commitment to hashchain file
+        append_commitment_to_file(
+            self.hashchain_file_path.as_ref().unwrap(),
+            &new_commitment,
+        )?;
+
+        // Update header chain length in file
+        update_header_chain_length(
+            self.hashchain_file_path.as_ref().unwrap(),
+            self.chain_length + 1,
+        )?;
+
+        // Update instance state
         self.current_commitment = Some(new_commitment.commitment_hash.clone());
         self.chain_length += 1;
+
+        // Update header in memory
+        if let Some(ref mut header) = self.header {
+            header.chain_length = self.chain_length;
+        }
 
         Ok(new_commitment)
     }
@@ -415,6 +435,46 @@ impl HashChain {
         if self.hashchain_file_path.is_none() {
             return Ok(false);
         }
+
+        // Validate file format compliance
+        if !validate_hashchain_file_format(self.hashchain_file_path.as_ref().unwrap())? {
+            return Ok(false);
+        }
+
+        // Validate data file exists and matches header
+        if !validate_data_file_integrity(
+            self.data_file_path.as_ref().unwrap(),
+            self.header.as_ref().unwrap(),
+        )? {
+            return Ok(false);
+        }
+
+        // Validate header checksum
+        if !validate_header_checksum(self.header.as_ref().unwrap())? {
+            return Ok(false);
+        }
+
+        // Validate all commitments in the chain
+        if self.chain_length > 0 {
+            if !validate_all_commitments_in_chain(
+                self.hashchain_file_path.as_ref().unwrap(),
+                self.chain_length,
+                self.anchored_commitment.as_ref().unwrap(),
+                self.total_chunks,
+            )? {
+                return Ok(false);
+            }
+        }
+
+        // Validate Merkle tree integrity
+        if !validate_merkle_tree_integrity(
+            self.hashchain_file_path.as_ref().unwrap(),
+            self.data_file_path.as_ref().unwrap(),
+            self.header.as_ref().unwrap(),
+        )? {
+            return Ok(false);
+        }
+
         Ok(true)
     }
 
@@ -489,39 +549,49 @@ impl HashChain {
             ));
         }
 
-        // Generate mock proof window for last 8 blocks
-        // In production, this would read from the .hashchain file
-        let mut commitments = Vec::new();
+        if self.hashchain_file_path.is_none() {
+            return Err(Error::new(
+                Status::InvalidArg,
+                "No hashchain file available".to_string(),
+            ));
+        }
+
+        // Read last 8 commitments from file
+        let commitments = read_last_n_commitments_from_file(
+            self.hashchain_file_path.as_ref().unwrap(),
+            PROOF_WINDOW_BLOCKS as usize,
+        )?;
+
+        // Generate Merkle proofs for all selected chunks in the proof window
+        let merkle_tree = build_merkle_tree_from_file(
+            self.hashchain_file_path.as_ref().unwrap()
+        )?;
+        
         let mut merkle_proofs = Vec::new();
-
-        // Generate 8 commitments (proof window)
-        for i in 0..PROOF_WINDOW_BLOCKS {
-            let mock_commitment = PhysicalAccessCommitment {
-                block_height: (self.initial_block_height + self.chain_length as u64 - PROOF_WINDOW_BLOCKS as u64 + i as u64) as f64,
-                previous_commitment: self.current_commitment.as_ref().unwrap_or(&Buffer::from(vec![0u8; 32])).clone(),
-                block_hash: Buffer::from(vec![i as u8; 32]), // Mock block hash
-                selected_chunks: vec![0, 1, 2, 3], // Mock chunk selection
-                chunk_hashes: vec![
-                    Buffer::from(vec![0u8; 32]),
-                    Buffer::from(vec![1u8; 32]),
-                    Buffer::from(vec![2u8; 32]),
-                    Buffer::from(vec![3u8; 32]),
-                ],
-                commitment_hash: Buffer::from(vec![i as u8; 32]), // Mock commitment hash
-            };
-            commitments.push(mock_commitment);
-
-            // Generate 4 merkle proofs per commitment (CHUNKS_PER_BLOCK)
-            for _j in 0..CHUNKS_PER_BLOCK {
-                merkle_proofs.push(Buffer::from(vec![0u8; 33])); // Mock merkle proof
+        for commitment in &commitments {
+            for &chunk_idx in &commitment.selected_chunks {
+                let proof = generate_merkle_proof(&merkle_tree, chunk_idx, self.total_chunks as u32)?;
+                merkle_proofs.push(proof);
             }
         }
+
+        // Determine start commitment
+        let start_commitment = if self.chain_length == PROOF_WINDOW_BLOCKS {
+            // If we have exactly 8 blocks, start from anchored commitment
+            self.anchored_commitment.as_ref().unwrap().clone()
+        } else {
+            // Otherwise, read the commitment before the window
+            read_commitment_at_index_from_file(
+                self.hashchain_file_path.as_ref().unwrap(),
+                (self.chain_length - PROOF_WINDOW_BLOCKS - 1) as usize,
+            )?.commitment_hash
+        };
 
         Ok(ProofWindow {
             commitments,
             merkle_proofs,
-            start_commitment: self.anchored_commitment.as_ref().unwrap_or(&Buffer::from(vec![0u8; 32])).clone(),
-            end_commitment: self.current_commitment.as_ref().unwrap_or(&Buffer::from(vec![0u8; 32])).clone(),
+            start_commitment,
+            end_commitment: self.current_commitment.as_ref().unwrap().clone(),
         })
     }
 
@@ -1144,5 +1214,518 @@ fn extract_initial_params_from_file(
 ) -> Result<(u64, Buffer, Buffer)> {
     // Would extract from file - simplified implementation
     Ok((0, Buffer::from(vec![0u8; 32]), Buffer::from(vec![0u8; 32])))
+}
+
+// PRODUCTION HELPER FUNCTIONS
+
+/// Read last N commitments from hashchain file
+fn read_last_n_commitments_from_file(
+    hashchain_file_path: &str,
+    n: usize,
+) -> Result<Vec<PhysicalAccessCommitment>> {
+    let mut file = File::open(hashchain_file_path)?;
+    let header = read_header(&mut file)?;
+    
+    if header.chain_length == 0 {
+        return Ok(Vec::new());
+    }
+    
+    let actual_n = std::cmp::min(n, header.chain_length as usize);
+    let mut commitments = Vec::new();
+    
+    // Skip merkle tree section
+    skip_merkle_tree_section(&mut file)?;
+    
+    // Calculate position of the commitments we want
+    let start_index = header.chain_length as usize - actual_n;
+    
+    // Skip to the start of the commitments we want
+    for _ in 0..start_index {
+        skip_commitment(&mut file)?;
+    }
+    
+    // Read the last N commitments
+    for _ in 0..actual_n {
+        let commitment = read_commitment_from_file(&mut file)?;
+        commitments.push(commitment);
+    }
+    
+    Ok(commitments)
+}
+
+/// Read commitment at specific index from hashchain file
+fn read_commitment_at_index_from_file(
+    hashchain_file_path: &str,
+    index: usize,
+) -> Result<PhysicalAccessCommitment> {
+    let mut file = File::open(hashchain_file_path)?;
+    let header = read_header(&mut file)?;
+    
+    if index >= header.chain_length as usize {
+        return Err(Error::new(
+            Status::InvalidArg,
+            format!("Index {} out of range [0, {})", index, header.chain_length),
+        ));
+    }
+    
+    // Skip merkle tree section
+    skip_merkle_tree_section(&mut file)?;
+    
+    // Skip to the desired commitment
+    for _ in 0..index {
+        skip_commitment(&mut file)?;
+    }
+    
+    // Read the commitment at the specified index
+    read_commitment_from_file(&mut file)
+}
+
+/// Append new commitment to hashchain file
+fn append_commitment_to_file(
+    hashchain_file_path: &str,
+    commitment: &PhysicalAccessCommitment,
+) -> Result<()> {
+    let mut file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(hashchain_file_path)?;
+    
+    // Seek to end minus footer size (40 bytes)
+    file.seek(SeekFrom::End(-40))?;
+    
+    // Write the commitment
+    write_commitment_to_file(&mut file, commitment)?;
+    
+    // Recalculate and write new footer
+    let file_size = file.stream_position()? + 40;
+    file.write_all(&file_size.to_be_bytes())?;
+    
+    // Calculate new file checksum
+    let current_pos = file.stream_position()?;
+    file.seek(SeekFrom::Start(0))?;
+    let mut content = vec![0u8; current_pos as usize];
+    file.read_exact(&mut content)?;
+    let file_checksum = compute_sha256(&content);
+    file.write_all(&file_checksum)?;
+    
+    file.sync_all()?;
+    Ok(())
+}
+
+/// Update header chain length in hashchain file
+fn update_header_chain_length(hashchain_file_path: &str, new_length: u32) -> Result<()> {
+    let mut file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(hashchain_file_path)?;
+    
+    // Seek to chain length field (offset 148-151)
+    file.seek(SeekFrom::Start(148))?;
+    file.write_all(&new_length.to_be_bytes())?;
+    
+    // Recalculate header checksum
+    file.seek(SeekFrom::Start(0))?;
+    let mut header_bytes = vec![0u8; 152]; // Read bytes 0-151
+    file.read_exact(&mut header_bytes)?;
+    let header_checksum = compute_sha256(&header_bytes);
+    
+    // Write new header checksum (offset 152-183)
+    file.write_all(&header_checksum)?;
+    
+    file.sync_all()?;
+    Ok(())
+}
+
+/// Enhanced merkle tree structure for production use
+struct MerkleTree {
+    levels: Vec<Vec<[u8; 32]>>,
+    root: [u8; 32],
+}
+
+impl MerkleTree {
+    fn new(leaf_hashes: Vec<[u8; 32]>) -> Self {
+        if leaf_hashes.is_empty() {
+            return MerkleTree {
+                levels: vec![],
+                root: [0u8; 32],
+            };
+        }
+        
+        let mut levels = vec![leaf_hashes];
+        
+        while levels.last().unwrap().len() > 1 {
+            let current_level = levels.last().unwrap();
+            let mut next_level = Vec::new();
+            
+            for i in (0..current_level.len()).step_by(2) {
+                let left = current_level[i];
+                let right = if i + 1 < current_level.len() {
+                    current_level[i + 1]
+                } else {
+                    left // Duplicate if odd number
+                };
+                
+                let parent = compute_sha256_from_slices(&left, &right);
+                next_level.push(parent);
+            }
+            
+            levels.push(next_level);
+        }
+        
+        let root = levels.last().unwrap()[0];
+        
+        MerkleTree { levels, root }
+    }
+    
+    fn generate_proof(&self, leaf_index: u32) -> Result<Buffer> {
+        if self.levels.is_empty() {
+            return Err(Error::new(
+                Status::InvalidArg,
+                "Empty merkle tree".to_string(),
+            ));
+        }
+        
+        let mut proof = Vec::new();
+        let mut current_index = leaf_index as usize;
+        
+        // Generate proof for each level (except root)
+        for level in &self.levels[..self.levels.len() - 1] {
+            if current_index >= level.len() {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    format!("Index {} out of range for level size {}", current_index, level.len()),
+                ));
+            }
+            
+            // Determine sibling index and direction
+            let sibling_index = if current_index % 2 == 0 {
+                current_index + 1
+            } else {
+                current_index - 1
+            };
+            
+            if sibling_index < level.len() {
+                let sibling_hash = level[sibling_index];
+                proof.extend_from_slice(&sibling_hash);
+                
+                // Direction: 1 if sibling is on left, 0 if on right
+                let direction = if current_index % 2 == 0 { 0u8 } else { 1u8 };
+                proof.push(direction);
+            }
+            
+            current_index = current_index / 2;
+        }
+        
+        Ok(Buffer::from(proof))
+    }
+}
+
+/// Build merkle tree from hashchain file
+fn build_merkle_tree_from_file(hashchain_file_path: &str) -> Result<MerkleTree> {
+    let mut file = File::open(hashchain_file_path)?;
+    let _header = read_header(&mut file)?;
+    
+    // Read merkle tree node count
+    let mut node_count_bytes = [0u8; 4];
+    file.read_exact(&mut node_count_bytes)?;
+    let node_count = u32::from_be_bytes(node_count_bytes);
+    
+    // Read all tree nodes (assuming they're leaf nodes)
+    let mut leaf_hashes = Vec::new();
+    for _ in 0..node_count {
+        let mut hash = [0u8; 32];
+        file.read_exact(&mut hash)?;
+        leaf_hashes.push(hash);
+    }
+    
+    Ok(MerkleTree::new(leaf_hashes))
+}
+
+/// Generate merkle proof for specific chunk
+fn generate_merkle_proof(
+    merkle_tree: &MerkleTree,
+    chunk_index: u32,
+    _total_chunks: u32,
+) -> Result<Buffer> {
+    merkle_tree.generate_proof(chunk_index)
+}
+
+/// Skip merkle tree section in file
+fn skip_merkle_tree_section(file: &mut File) -> Result<()> {
+    let mut node_count_bytes = [0u8; 4];
+    file.read_exact(&mut node_count_bytes)?;
+    let node_count = u32::from_be_bytes(node_count_bytes);
+    
+    // Skip all tree nodes
+    file.seek(SeekFrom::Current((node_count * 32) as i64))?;
+    Ok(())
+}
+
+/// Skip single commitment in file
+fn skip_commitment(file: &mut File) -> Result<()> {
+    // Read and skip commitment structure
+    // Block height (8 bytes)
+    file.seek(SeekFrom::Current(8))?;
+    // Previous commitment (32 bytes)
+    file.seek(SeekFrom::Current(32))?;
+    // Block hash (32 bytes)
+    file.seek(SeekFrom::Current(32))?;
+    
+    // Read chunk count and skip chunks
+    let mut chunk_count_bytes = [0u8; 4];
+    file.read_exact(&mut chunk_count_bytes)?;
+    let chunk_count = u32::from_be_bytes(chunk_count_bytes);
+    file.seek(SeekFrom::Current((chunk_count * 4) as i64))?;
+    
+    // Read hash count and skip hashes
+    let mut hash_count_bytes = [0u8; 4];
+    file.read_exact(&mut hash_count_bytes)?;
+    let hash_count = u32::from_be_bytes(hash_count_bytes);
+    file.seek(SeekFrom::Current((hash_count * 32) as i64))?;
+    
+    // Skip commitment hash (32 bytes)
+    file.seek(SeekFrom::Current(32))?;
+    
+    Ok(())
+}
+
+/// Read single commitment from file
+fn read_commitment_from_file(file: &mut File) -> Result<PhysicalAccessCommitment> {
+    // Read block height
+    let mut block_height_bytes = [0u8; 8];
+    file.read_exact(&mut block_height_bytes)?;
+    let block_height = f64::from_be_bytes(block_height_bytes);
+    
+    // Read previous commitment
+    let mut previous_commitment = vec![0u8; 32];
+    file.read_exact(&mut previous_commitment)?;
+    
+    // Read block hash
+    let mut block_hash = vec![0u8; 32];
+    file.read_exact(&mut block_hash)?;
+    
+    // Read selected chunks
+    let mut chunk_count_bytes = [0u8; 4];
+    file.read_exact(&mut chunk_count_bytes)?;
+    let chunk_count = u32::from_be_bytes(chunk_count_bytes);
+    
+    let mut selected_chunks = Vec::new();
+    for _ in 0..chunk_count {
+        let mut chunk_idx_bytes = [0u8; 4];
+        file.read_exact(&mut chunk_idx_bytes)?;
+        let chunk_idx = u32::from_be_bytes(chunk_idx_bytes);
+        selected_chunks.push(chunk_idx);
+    }
+    
+    // Read chunk hashes
+    let mut hash_count_bytes = [0u8; 4];
+    file.read_exact(&mut hash_count_bytes)?;
+    let hash_count = u32::from_be_bytes(hash_count_bytes);
+    
+    let mut chunk_hashes = Vec::new();
+    for _ in 0..hash_count {
+        let mut chunk_hash = vec![0u8; 32];
+        file.read_exact(&mut chunk_hash)?;
+        chunk_hashes.push(Buffer::from(chunk_hash));
+    }
+    
+    // Read commitment hash
+    let mut commitment_hash = vec![0u8; 32];
+    file.read_exact(&mut commitment_hash)?;
+    
+    Ok(PhysicalAccessCommitment {
+        block_height,
+        previous_commitment: Buffer::from(previous_commitment),
+        block_hash: Buffer::from(block_hash),
+        selected_chunks,
+        chunk_hashes,
+        commitment_hash: Buffer::from(commitment_hash),
+    })
+}
+
+/// Write single commitment to file
+fn write_commitment_to_file(file: &mut File, commitment: &PhysicalAccessCommitment) -> Result<()> {
+    // Write block height
+    file.write_all(&commitment.block_height.to_be_bytes())?;
+    // Write previous commitment
+    file.write_all(&commitment.previous_commitment)?;
+    // Write block hash
+    file.write_all(&commitment.block_hash)?;
+    
+    // Write selected chunks count and chunks
+    file.write_all(&(commitment.selected_chunks.len() as u32).to_be_bytes())?;
+    for &chunk_idx in &commitment.selected_chunks {
+        file.write_all(&chunk_idx.to_be_bytes())?;
+    }
+    
+    // Write chunk hashes count and hashes
+    file.write_all(&(commitment.chunk_hashes.len() as u32).to_be_bytes())?;
+    for chunk_hash in &commitment.chunk_hashes {
+        file.write_all(chunk_hash)?;
+    }
+    
+    // Write commitment hash
+    file.write_all(&commitment.commitment_hash)?;
+    
+    Ok(())
+}
+
+/// Validate hashchain file format compliance
+fn validate_hashchain_file_format(hashchain_file_path: &str) -> Result<bool> {
+    let mut file = File::open(hashchain_file_path)?;
+    
+    // Validate magic number
+    let mut magic = [0u8; 4];
+    file.read_exact(&mut magic)?;
+    if magic != HASHCHAIN_MAGIC {
+        return Ok(false);
+    }
+    
+    // Validate format version
+    let mut version_bytes = [0u8; 4];
+    file.read_exact(&mut version_bytes)?;
+    let version = u32::from_be_bytes(version_bytes);
+    if version != HASHCHAIN_FORMAT_VERSION {
+        return Ok(false);
+    }
+    
+    Ok(true)
+}
+
+/// Validate data file integrity against header
+fn validate_data_file_integrity(
+    data_file_path: &str,
+    header: &HashChainHeader,
+) -> Result<bool> {
+    if !Path::new(data_file_path).exists() {
+        return Ok(false);
+    }
+    
+    // Validate data file path hash
+    let actual_path_hash = compute_sha256(data_file_path.as_bytes());
+    if actual_path_hash != header.data_file_path_hash.as_ref() {
+        return Ok(false);
+    }
+    
+    // Validate file size matches expected chunk count
+    let metadata = std::fs::metadata(data_file_path)?;
+    let expected_size = header.total_chunks as u64 * CHUNK_SIZE_BYTES as u64;
+    if metadata.len() != expected_size {
+        return Ok(false);
+    }
+    
+    Ok(true)
+}
+
+/// Validate header checksum
+fn validate_header_checksum(header: &HashChainHeader) -> Result<bool> {
+    // Reconstruct header bytes for checksum validation
+    let mut header_bytes = Vec::new();
+    header_bytes.extend_from_slice(&header.magic);
+    header_bytes.extend_from_slice(&header.format_version.to_be_bytes());
+    header_bytes.extend_from_slice(&header.data_file_hash);
+    header_bytes.extend_from_slice(&header.merkle_root);
+    header_bytes.extend_from_slice(&(header.total_chunks as u64).to_be_bytes());
+    header_bytes.extend_from_slice(&header.chunk_size.to_be_bytes());
+    header_bytes.extend_from_slice(&header.data_file_path_hash);
+    header_bytes.extend_from_slice(&header.anchored_commitment);
+    header_bytes.extend_from_slice(&header.chain_length.to_be_bytes());
+    
+    let expected_checksum = compute_sha256(&header_bytes);
+    Ok(expected_checksum == header.header_checksum.as_ref())
+}
+
+/// Validate all commitments in the chain
+fn validate_all_commitments_in_chain(
+    hashchain_file_path: &str,
+    chain_length: u32,
+    anchored_commitment: &Buffer,
+    total_chunks: u64,
+) -> Result<bool> {
+    let mut file = File::open(hashchain_file_path)?;
+    let _header = read_header(&mut file)?;
+    
+    // Skip merkle tree section
+    skip_merkle_tree_section(&mut file)?;
+    
+    let mut expected_previous = anchored_commitment.clone();
+    
+    for _ in 0..chain_length {
+        let commitment = read_commitment_from_file(&mut file)?;
+        
+        // Validate previous commitment linkage
+        if commitment.previous_commitment.as_ref() != expected_previous.as_ref() {
+            return Ok(false);
+        }
+        
+        // Validate commitment hash
+        let calculated_hash = calculate_commitment_hash(&commitment)?;
+        if calculated_hash.as_ref() != commitment.commitment_hash.as_ref() {
+            return Ok(false);
+        }
+        
+        // Validate chunk selection
+        if !verify_chunk_selection(
+            commitment.block_hash.clone(),
+            total_chunks as f64,
+            commitment.selected_chunks.clone(),
+            Some(CHUNK_SELECTION_VERSION),
+        )? {
+            return Ok(false);
+        }
+        
+        // Validate chunk indices are in range
+        for &chunk_idx in &commitment.selected_chunks {
+            if chunk_idx >= total_chunks as u32 {
+                return Ok(false);
+            }
+        }
+        
+        expected_previous = commitment.commitment_hash.clone();
+    }
+    
+    Ok(true)
+}
+
+/// Validate merkle tree integrity
+fn validate_merkle_tree_integrity(
+    hashchain_file_path: &str,
+    data_file_path: &str,
+    header: &HashChainHeader,
+) -> Result<bool> {
+    // Read all chunks from data file and calculate their hashes
+    let mut data_file = File::open(data_file_path)?;
+    let mut chunk_hashes = Vec::new();
+    
+    for chunk_idx in 0..header.total_chunks as u32 {
+        data_file.seek(SeekFrom::Start((chunk_idx as u64) * (CHUNK_SIZE_BYTES as u64)))?;
+        let mut chunk_data = vec![0u8; CHUNK_SIZE_BYTES as usize];
+        data_file.read_exact(&mut chunk_data)?;
+        
+        // For last chunk, only hash the actual data (remove padding)
+        if chunk_idx == header.total_chunks as u32 - 1 {
+            // Remove trailing zeros for hash calculation
+            while chunk_data.last() == Some(&0) && chunk_data.len() > 1 {
+                chunk_data.pop();
+            }
+        }
+        
+        let chunk_hash = compute_sha256(&chunk_data);
+        chunk_hashes.push(chunk_hash);
+    }
+    
+    // Build merkle tree from actual chunk data
+    let calculated_root = build_merkle_tree(&chunk_hashes);
+    
+    // Validate against header merkle root
+    if calculated_root != header.merkle_root.as_ref() {
+        return Ok(false);
+    }
+    
+    // Also validate the stored merkle tree in the hashchain file
+    let stored_merkle_tree = build_merkle_tree_from_file(hashchain_file_path)?;
+    
+    // Compare stored tree root with calculated root
+    Ok(stored_merkle_tree.root == calculated_root)
 }
 
