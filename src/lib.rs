@@ -1,5 +1,4 @@
 use napi::bindgen_prelude::*;
-use napi::Result;
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use std::fs::File;
@@ -134,6 +133,42 @@ pub struct ChunkSelectionResult {
     pub block_hash: Buffer,
     /// Hash of selection parameters for verification
     pub verification_hash: Buffer,
+}
+
+#[napi(object)]
+#[derive(Clone)]
+/// Human-readable information about HashChain state
+pub struct HashChainInfo {
+    /// Current status: "uninitialized", "initialized", "building", "active"
+    pub status: String,
+    /// Total number of chunks in the data file
+    pub total_chunks: f64,
+    /// Number of blocks added to the chain
+    pub chain_length: u32,
+    /// Size of each chunk in bytes (4096)
+    pub chunk_size_bytes: u32,
+    /// Total storage required in MB
+    pub total_storage_mb: f64,
+    /// Path to .hashchain file
+    pub hashchain_file_path: Option<String>,
+    /// Path to .data file
+    pub data_file_path: Option<String>,
+    /// Size of .hashchain file in bytes
+    pub hashchain_file_size_bytes: Option<f64>,
+    /// Size of .data file in bytes
+    pub data_file_size_bytes: Option<f64>,
+    /// Anchored commitment hash (hex)
+    pub anchored_commitment: Option<String>,
+    /// Current commitment hash (hex)
+    pub current_commitment: Option<String>,
+    /// Whether proof window is ready (8+ blocks)
+    pub proof_window_ready: bool,
+    /// Blocks remaining until proof window ready
+    pub blocks_until_proof_ready: Option<u32>,
+    /// Consensus algorithm version
+    pub consensus_algorithm_version: u32,
+    /// Initial blockchain block height
+    pub initial_block_height: f64,
 }
 
 #[napi]
@@ -487,6 +522,73 @@ impl HashChain {
             merkle_proofs,
             start_commitment: self.anchored_commitment.as_ref().unwrap_or(&Buffer::from(vec![0u8; 32])).clone(),
             end_commitment: self.current_commitment.as_ref().unwrap_or(&Buffer::from(vec![0u8; 32])).clone(),
+        })
+    }
+
+    /// Get file path for async operations (returns owned data)
+    #[napi]
+    pub fn get_data_file_path(&self) -> Option<String> {
+        self.data_file_path.clone()
+    }
+
+    /// Get comprehensive information about the HashChain state
+    #[napi]
+    pub fn get_chain_info(&self) -> Result<HashChainInfo> {
+        let file_paths = self.get_file_paths();
+        let (hashchain_path, data_path) = match file_paths {
+            Some(paths) if paths.len() >= 2 => (Some(paths[0].clone()), Some(paths[1].clone())),
+            _ => (None, None),
+        };
+
+        // Calculate file sizes if files exist
+        let (hashchain_size, data_size) = if let (Some(hc_path), Some(d_path)) = (&hashchain_path, &data_path) {
+            let hc_size = std::fs::metadata(hc_path).map(|m| m.len()).unwrap_or(0);
+            let d_size = std::fs::metadata(d_path).map(|m| m.len()).unwrap_or(0);
+            (Some(hc_size as f64), Some(d_size as f64))
+        } else {
+            (None, None)
+        };
+
+        // Format commitment hashes for display
+        let anchored_commitment_hex = self.anchored_commitment.as_ref()
+            .map(|c| hex::encode(c.as_ref()));
+        let current_commitment_hex = self.current_commitment.as_ref()
+            .map(|c| hex::encode(c.as_ref()));
+
+        // Determine status
+        let status = if self.hashchain_file_path.is_none() {
+            "uninitialized".to_string()
+        } else if self.chain_length == 0 {
+            "initialized".to_string()
+        } else if self.chain_length < PROOF_WINDOW_BLOCKS {
+            "building".to_string()
+        } else {
+            "active".to_string()
+        };
+
+        // Calculate estimated storage requirements
+        let chunk_storage_mb = (self.total_chunks as f64 * CHUNK_SIZE_BYTES as f64) / (1024.0 * 1024.0);
+
+        Ok(HashChainInfo {
+            status,
+            total_chunks: self.total_chunks as f64,
+            chain_length: self.chain_length,
+            chunk_size_bytes: CHUNK_SIZE_BYTES,
+            total_storage_mb: chunk_storage_mb,
+            hashchain_file_path: hashchain_path,
+            data_file_path: data_path,
+            hashchain_file_size_bytes: hashchain_size,
+            data_file_size_bytes: data_size,
+            anchored_commitment: anchored_commitment_hex,
+            current_commitment: current_commitment_hex,
+            proof_window_ready: self.chain_length >= PROOF_WINDOW_BLOCKS,
+            blocks_until_proof_ready: if self.chain_length < PROOF_WINDOW_BLOCKS {
+                Some(PROOF_WINDOW_BLOCKS - self.chain_length)
+            } else {
+                None
+            },
+            consensus_algorithm_version: CHUNK_SELECTION_VERSION,
+            initial_block_height: self.initial_block_height as f64,
         })
     }
 }
@@ -1043,3 +1145,4 @@ fn extract_initial_params_from_file(
     // Would extract from file - simplified implementation
     Ok((0, Buffer::from(vec![0u8; 32]), Buffer::from(vec![0u8; 32])))
 }
+

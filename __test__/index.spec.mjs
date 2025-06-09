@@ -890,3 +890,168 @@ test('chunk selection with edge case file sizes', (t) => {
   const uniqueIndices = new Set(result.selectedIndices)
   t.is(uniqueIndices.size, 4)
 })
+
+test('HashChain getChainInfo provides comprehensive state information', (t) => {
+  const testDir = createTestDir('get_chain_info_test')
+  const testData = createTestData(16384) // 4 chunks
+  
+  // Test 1: Uninitialized state
+  const hashchain = new HashChain(TEST_PUBLIC_KEY, TEST_BLOCK_HEIGHT, TEST_BLOCK_HASH)
+  let info = hashchain.getChainInfo()
+  
+  t.is(info.status, 'uninitialized')
+  t.is(info.totalChunks, 0)
+  t.is(info.chainLength, 0)
+  t.is(info.chunkSizeBytes, 4096)
+  t.is(info.totalStorageMb, 0)
+  t.is(info.hashchainFilePath, undefined)
+  t.is(info.dataFilePath, undefined)
+  t.is(info.hashchainFileSizeBytes, undefined)
+  t.is(info.dataFileSizeBytes, undefined)
+  t.is(info.anchoredCommitment, undefined)
+  t.is(info.currentCommitment, undefined)
+  t.false(info.proofWindowReady)
+  t.is(info.blocksUntilProofReady, 8)
+  t.is(info.consensusAlgorithmVersion, 1)
+  t.is(info.initialBlockHeight, TEST_BLOCK_HEIGHT)
+  
+  // Test 2: Initialized state (data streamed)
+  hashchain.streamData(testData, testDir)
+  info = hashchain.getChainInfo()
+  
+  t.is(info.status, 'initialized')
+  t.is(info.totalChunks, 4)
+  t.is(info.chainLength, 0)
+  t.is(info.totalStorageMb, 16 / 1024) // 16KB = 0.015625 MB
+  t.truthy(info.hashchainFilePath)
+  t.truthy(info.dataFilePath)
+  t.true(info.hashchainFileSizeBytes > 0)
+  t.true(info.dataFileSizeBytes > 0)
+  t.truthy(info.anchoredCommitment)
+  t.truthy(info.currentCommitment)
+  t.is(info.anchoredCommitment, info.currentCommitment) // Should be equal initially
+  t.false(info.proofWindowReady)
+  t.is(info.blocksUntilProofReady, 8)
+  
+  // Verify hex strings are valid
+  t.is(info.anchoredCommitment.length, 64) // 32 bytes = 64 hex chars
+  t.is(info.currentCommitment.length, 64)
+  t.regex(info.anchoredCommitment, /^[0-9a-f]{64}$/)
+  
+  // Test 3: Building state (some blocks added)
+  const blockHashes = [
+    Buffer.from('1'.repeat(64), 'hex'),
+    Buffer.from('2'.repeat(64), 'hex'),
+    Buffer.from('3'.repeat(64), 'hex')
+  ]
+  
+  for (let i = 0; i < blockHashes.length; i++) {
+    hashchain.addBlock(blockHashes[i])
+    info = hashchain.getChainInfo()
+    
+    t.is(info.status, 'building')
+    t.is(info.chainLength, i + 1)
+    t.false(info.proofWindowReady)
+    t.is(info.blocksUntilProofReady, 8 - (i + 1))
+    
+    // Current commitment should change but anchored should stay the same
+    t.truthy(info.currentCommitment)
+    t.not(info.currentCommitment, info.anchoredCommitment)
+  }
+  
+  // Test 4: Active state (8 blocks added)
+  const additionalBlocks = [
+    Buffer.from('4'.repeat(64), 'hex'),
+    Buffer.from('5'.repeat(64), 'hex'),
+    Buffer.from('6'.repeat(64), 'hex'),
+    Buffer.from('7'.repeat(64), 'hex'),
+    Buffer.from('8'.repeat(64), 'hex')
+  ]
+  
+  for (const blockHash of additionalBlocks) {
+    hashchain.addBlock(blockHash)
+  }
+  
+  info = hashchain.getChainInfo()
+  t.is(info.status, 'active')
+  t.is(info.chainLength, 8)
+  t.true(info.proofWindowReady)
+  t.is(info.blocksUntilProofReady, undefined)
+  
+  // File sizes should be reasonable
+  t.true(info.dataFileSizeBytes >= 16384) // At least 16KB for 4 chunks
+  t.true(info.hashchainFileSizeBytes > 0) // Some metadata
+  
+  cleanupTestDir(testDir)
+})
+
+test('HashChain getChainInfo handles file size calculation correctly', (t) => {
+  const testDir = createTestDir('get_chain_info_file_sizes')
+  
+  // Test different data sizes
+  const testSizes = [
+    { bytes: 4096, expectedChunks: 1, expectedMB: 4096 / (1024 * 1024) },
+    { bytes: 8192, expectedChunks: 2, expectedMB: 8192 / (1024 * 1024) },
+    { bytes: 1048576, expectedChunks: 256, expectedMB: 1 } // 1MB
+  ]
+  
+  for (const { bytes, expectedChunks, expectedMB } of testSizes) {
+    const testData = createTestData(bytes)
+    const hashchain = new HashChain(TEST_PUBLIC_KEY, TEST_BLOCK_HEIGHT, TEST_BLOCK_HASH)
+    hashchain.streamData(testData, testDir)
+    
+    const info = hashchain.getChainInfo()
+    t.is(info.totalChunks, expectedChunks)
+    t.is(info.totalStorageMb, expectedMB)
+    
+    // Verify file paths are correctly formatted
+    t.true(info.hashchainFilePath.endsWith('.hashchain'))
+    t.true(info.dataFilePath.endsWith('.data'))
+    
+    // Both files should use the same hash in the filename
+    const hashchainHash = info.hashchainFilePath.split('/').pop().split('.')[0]
+    const dataHash = info.dataFilePath.split('/').pop().split('.')[0]
+    t.is(hashchainHash, dataHash)
+  }
+  
+  cleanupTestDir(testDir)
+})
+
+test('HashChain getChainInfo commitment tracking works correctly', (t) => {
+  const testDir = createTestDir('get_chain_info_commitments')
+  const testData = createTestData(16384) // 4 chunks
+  
+  const hashchain = new HashChain(TEST_PUBLIC_KEY, TEST_BLOCK_HEIGHT, TEST_BLOCK_HASH)
+  hashchain.streamData(testData, testDir)
+  
+  const initialInfo = hashchain.getChainInfo()
+  const initialCommitment = initialInfo.currentCommitment
+  
+  // Add blocks and track commitment changes
+  const blockHashes = [
+    Buffer.from('a'.repeat(64), 'hex'),
+    Buffer.from('b'.repeat(64), 'hex'),
+    Buffer.from('c'.repeat(64), 'hex')
+  ]
+  
+  let previousCommitment = initialCommitment
+  
+  for (const blockHash of blockHashes) {
+    hashchain.addBlock(blockHash)
+    const info = hashchain.getChainInfo()
+    
+    // Current commitment should change
+    t.not(info.currentCommitment, previousCommitment)
+    
+    // Anchored commitment should never change
+    t.is(info.anchoredCommitment, initialCommitment)
+    
+    // Commitment should be valid hex
+    t.is(info.currentCommitment.length, 64)
+    t.regex(info.currentCommitment, /^[0-9a-f]{64}$/)
+    
+    previousCommitment = info.currentCommitment
+  }
+  
+  cleanupTestDir(testDir)
+})
