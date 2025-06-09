@@ -341,77 +341,39 @@ pub fn hash_to_difficulty(hash: Buffer) -> Result<f64> {
     Ok(difficulty)
 }
 
-/// Convert Bitcoin difficulty to target using a simplified formula
-/// target = max_target >> (difficulty - 1) leading zero bits
+/// Convert Bitcoin difficulty to target using a gradual logarithmic formula
+/// This creates smooth difficulty progression: difficulty 2.0 is exactly 2x harder than 1.0, etc.
 fn difficulty_to_target(difficulty: f64) -> [u8; 32] {
     if difficulty <= 0.0 {
         return MAX_TARGET;
     }
 
-    let mut result = [0u8; 32];
+    // Initialize all bytes to 0xff (maximum target)
+    let mut result = [0xffu8; 32];
 
-    if difficulty == 1.0 {
-        // Difficulty 1.0: target requires at least 8 leading zero bits (1 byte)
-        result[0] = 0x00;
-        for i in 1..32 {
-            result[i] = 0xff;
-        }
-    } else if difficulty == 2.0 {
-        // Difficulty 2.0: target requires at least 12 leading zero bits
-        result[0] = 0x00;
-        result[1] = 0x0f;
-        for i in 2..32 {
-            result[i] = 0xff;
-        }
-    } else if difficulty == 4.0 {
-        // Difficulty 4.0: target requires at least 16 leading zero bits (2 bytes)
-        result[0] = 0x00;
-        result[1] = 0x00;
-        for i in 2..32 {
-            result[i] = 0xff;
-        }
-    } else if difficulty == 8.0 {
-        // Difficulty 8.0: target requires at least 20 leading zero bits
-        result[0] = 0x00;
-        result[1] = 0x00;
-        result[2] = 0x0f;
-        for i in 3..32 {
-            result[i] = 0xff;
-        }
-    } else if difficulty == 16.0 {
-        // Difficulty 16.0: target requires at least 24 leading zero bits (3 bytes)
-        result[0] = 0x00;
-        result[1] = 0x00;
-        result[2] = 0x00;
-        for i in 3..32 {
-            result[i] = 0xff;
-        }
-    } else if difficulty >= 32.0 {
-        // Very high difficulty: target requires many leading zero bits
-        let zero_bytes = ((difficulty.log2() as usize) + 1).min(28);
-        for i in 0..zero_bytes {
-            result[i] = 0x00;
-        }
-        for i in zero_bytes..32 {
-            result[i] = 0xff;
-        }
+    // Use logarithmic scaling for smooth difficulty progression
+    // Start with 8 zero bits for difficulty 1.0, then add bits gradually
+    let zero_bits = if difficulty <= 1.0 {
+        8.0
     } else {
-        // Intermediate difficulties: interpolate
-        let zero_bits = (8.0 + (difficulty - 1.0) * 4.0) as usize;
-        let zero_bytes = zero_bits / 8;
-        let remaining_bits = zero_bits % 8;
+        // Gradual increase: 8 + log2(difficulty) * 2 for smoother progression
+        8.0 + difficulty.log2() * 2.0
+    };
+    
+    let total_zero_bits = zero_bits.min(248.0); // Max 248 bits (31 bytes)
+    let zero_bits = total_zero_bits as usize;
+    
+    let zero_bytes = zero_bits / 8;
+    let remaining_bits = zero_bits % 8;
 
-        for i in 0..zero_bytes {
-            result[i] = 0x00;
-        }
+    // Set full zero bytes
+    for i in 0..zero_bytes.min(32) {
+        result[i] = 0x00;
+    }
 
-        if zero_bytes < 32 && remaining_bits > 0 {
-            result[zero_bytes] = 0xff >> remaining_bits;
-        }
-
-        for i in (zero_bytes + 1)..32 {
-            result[i] = 0xff;
-        }
+    // Set partial zero bits in the next byte
+    if zero_bytes < 32 && remaining_bits > 0 {
+        result[zero_bytes] = 0xff >> remaining_bits;
     }
 
     result
