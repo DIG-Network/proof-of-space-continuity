@@ -1,6 +1,6 @@
 use napi::bindgen_prelude::*;
 use napi::Result;
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
@@ -12,10 +12,8 @@ extern crate napi_derive;
 /// Bitcoin's maximum target (difficulty 1) - this is the easiest possible target
 /// Using a more reasonable target for demonstration purposes
 const MAX_TARGET: [u8; 32] = [
-    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
 ];
 
 #[napi(object)]
@@ -137,7 +135,6 @@ impl ProofOfWorkHandle {
     }
 }
 
-
 #[napi]
 /// Computes proof of work asynchronously using Bitcoin's target-based system.
 /// This function returns a handle for cancellation and unlimited attempts by default.
@@ -185,7 +182,7 @@ pub fn compute_proof_of_work_async(
         let progress_counter = progress_counter.clone();
         let result_mutex = handle.result.clone();
         let error_mutex = handle.error.clone();
-        
+
         task::spawn_blocking(move || {
             let target = difficulty_to_target(difficulty);
             let start_time = Instant::now();
@@ -209,8 +206,13 @@ pub fn compute_proof_of_work_async(
 
                 // Log attempt if requested
                 if log_attempts {
-                    println!("Attempt {}: nonce={}, hash={}, meets_target={}", 
-                            attempts + 1, nonce, hash_hex, meets_bitcoin_target(&hash, &target));
+                    println!(
+                        "Attempt {}: nonce={}, hash={}, meets_target={}",
+                        attempts + 1,
+                        nonce,
+                        hash_hex,
+                        meets_bitcoin_target(&hash, &target)
+                    );
                 }
 
                 // Check if hash meets Bitcoin target
@@ -224,12 +226,12 @@ pub fn compute_proof_of_work_async(
                         difficulty,
                         target: hex::encode(&target),
                     };
-                    
+
                     // Store the result
                     if let Ok(mut result_lock) = result_mutex.lock() {
                         *result_lock = Some(result);
                     }
-                    
+
                     // Mark completion in progress counter
                     progress_counter.store(u64::MAX, Ordering::Relaxed);
                     return;
@@ -243,7 +245,7 @@ pub fn compute_proof_of_work_async(
                     progress_counter.store(attempts, Ordering::Relaxed);
                 }
             }
-            
+
             // If we get here, we either hit max attempts or were cancelled
             if cancelled.load(Ordering::Relaxed) {
                 if let Ok(mut error_lock) = error_mutex.lock() {
@@ -251,7 +253,10 @@ pub fn compute_proof_of_work_async(
                 }
             } else {
                 if let Ok(mut error_lock) = error_mutex.lock() {
-                    *error_lock = Some(format!("Failed to find solution after {} attempts", attempts));
+                    *error_lock = Some(format!(
+                        "Failed to find solution after {} attempts",
+                        attempts
+                    ));
                 }
             }
         })
@@ -344,7 +349,7 @@ fn difficulty_to_target(difficulty: f64) -> [u8; 32] {
     }
 
     let mut result = [0u8; 32];
-    
+
     if difficulty == 1.0 {
         // Difficulty 1.0: target requires at least 8 leading zero bits (1 byte)
         result[0] = 0x00;
@@ -395,20 +400,20 @@ fn difficulty_to_target(difficulty: f64) -> [u8; 32] {
         let zero_bits = (8.0 + (difficulty - 1.0) * 4.0) as usize;
         let zero_bytes = zero_bits / 8;
         let remaining_bits = zero_bits % 8;
-        
+
         for i in 0..zero_bytes {
             result[i] = 0x00;
         }
-        
+
         if zero_bytes < 32 && remaining_bits > 0 {
             result[zero_bytes] = 0xff >> remaining_bits;
         }
-        
+
         for i in (zero_bytes + 1)..32 {
             result[i] = 0xff;
         }
     }
-    
+
     result
 }
 
@@ -422,12 +427,12 @@ fn target_to_difficulty(target: &[u8]) -> f64 {
             break;
         }
     }
-    
+
     // Very rough approximation of difficulty from target
     // Real Bitcoin uses precise big integer arithmetic
     let leading_zeros = msb_index * 8;
     let approximate_difficulty = 2.0_f64.powi(leading_zeros as i32);
-    
+
     approximate_difficulty.max(1.0)
 }
 
@@ -435,16 +440,16 @@ fn target_to_difficulty(target: &[u8]) -> f64 {
 fn meets_bitcoin_target(hash: &[u8], target: &[u8; 32]) -> bool {
     // Compare hash to target as big-endian numbers
     // Hash must be <= target to be valid
-    
+
     for i in 0..32 {
         if hash[i] < target[i] {
-            return true;  // hash < target, valid
+            return true; // hash < target, valid
         } else if hash[i] > target[i] {
             return false; // hash > target, invalid
         }
         // If equal, continue to next byte
     }
-    
+
     true // hash == target, valid
 }
 
@@ -462,4 +467,4 @@ fn compute_sha256(data: &[u8]) -> [u8; 32] {
 fn compute_double_sha256(data: &[u8]) -> [u8; 32] {
     let first_hash = compute_sha256(data);
     compute_sha256(&first_hash)
-} 
+}
