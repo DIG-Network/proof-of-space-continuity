@@ -1,9 +1,9 @@
 {
-  "name": "@dignetwork/proof-of-work-win32-x64-msvc",
-  "version": "0.1.4",
+  "name": "@dignetwork/proof-of-space-continuity-win32-x64-msvc",
+  "version": "0.1.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/DIG-Network/proof-of-work"
+    "url": "https://github.com/DIG-Network/proof-of-space-continuity"
   },
   "os": [
     "win32"
@@ -11,9 +11,9 @@
   "cpu": [
     "x64"
   ],
-  "main": "proof-of-work.win32-x64-msvc.node",
+  "main": "proof-of-space-continuity.win32-x64-msvc.node",
   "files": [
-    "proof-of-work.win32-x64-msvc.node"
+    "proof-of-space-continuity.win32-x64-msvc.node"
   ],
   "license": "MIT",
   "engines": {

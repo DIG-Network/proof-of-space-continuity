@@ -1,9 +1,9 @@
 {
-  "name": "@dignetwork/proof-of-work-darwin-arm64",
-  "version": "0.1.4",
+  "name": "@dignetwork/proof-of-space-continuity-darwin-arm64",
+  "version": "0.1.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/DIG-Network/proof-of-work"
+    "url": "https://github.com/DIG-Network/proof-of-space-continuity"
   },
   "os": [
     "darwin"
@@ -11,9 +11,9 @@
   "cpu": [
     "arm64"
   ],
-  "main": "proof-of-work.darwin-arm64.node",
+  "main": "proof-of-space-continuity.darwin-arm64.node",
   "files": [
-    "proof-of-work.darwin-arm64.node"
+    "proof-of-space-continuity.darwin-arm64.node"
   ],
   "license": "MIT",
   "engines": {

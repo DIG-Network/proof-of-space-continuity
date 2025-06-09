@@ -1,9 +1,9 @@
 {
-  "name": "@dignetwork/proof-of-work-linux-arm64-gnu",
-  "version": "0.1.4",
+  "name": "@dignetwork/proof-of-space-continuity-linux-arm64-gnu",
+  "version": "0.1.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/DIG-Network/proof-of-work"
+    "url": "https://github.com/DIG-Network/proof-of-space-continuity"
   },
   "os": [
     "linux"
@@ -11,9 +11,9 @@
   "cpu": [
     "arm64"
   ],
-  "main": "proof-of-work.linux-arm64-gnu.node",
+  "main": "proof-of-space-continuity.linux-arm64-gnu.node",
   "files": [
-    "proof-of-work.linux-arm64-gnu.node"
+    "proof-of-space-continuity.linux-arm64-gnu.node"
   ],
   "license": "MIT",
   "engines": {

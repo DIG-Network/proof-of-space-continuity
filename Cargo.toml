@@ -1,11 +1,11 @@
 [package]
 edition = "2021"
-name = "proof-of-work"
+name = "proof-of-space-continuity"
 version = "0.1.0"
 license = "MIT"
 authors = ["Your Name <your.email@example.com>"]
-homepage = "https://github.com/your-org/proof-of-work"
-repository = "https://github.com/your-org/proof-of-work"
+homepage = "https://github.com/DIG-Network/proof-of-space-continuity"
+repository = "https://github.com/DIG-Network/proof-of-space-continuity"
 
 [lib]
 crate-type = ["cdylib"]
