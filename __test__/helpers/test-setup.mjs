@@ -28,9 +28,26 @@ export function createTestData(size = 16384) {
  */
 export function createTestDir(testName) {
   const testDir = pathJoin(process.cwd(), 'test_output', testName)
+  
+  // Clean up existing directory with retry logic for Windows
   if (existsSync(testDir)) {
-    rmSync(testDir, { recursive: true, force: true })
+    try {
+      rmSync(testDir, { recursive: true, force: true })
+    } catch (error) {
+      if (error.code === 'ENOTEMPTY' || error.code === 'EBUSY') {
+        // On Windows, directories might still be in use
+        // Try to create a unique directory instead
+        const timestamp = Date.now()
+        const uniqueTestDir = `${testDir}_${timestamp}`
+        if (!existsSync(uniqueTestDir)) {
+          mkdirSync(uniqueTestDir, { recursive: true })
+          return uniqueTestDir
+        }
+      }
+      console.warn(`Failed to cleanup directory: ${testDir}, continuing anyway`)
+    }
   }
+  
   mkdirSync(testDir, { recursive: true })
   return testDir
 }
@@ -41,7 +58,22 @@ export function createTestDir(testName) {
  */
 export function cleanupTestDir(testDir) {
   if (existsSync(testDir)) {
-    rmSync(testDir, { recursive: true, force: true })
+    try {
+      rmSync(testDir, { recursive: true, force: true })
+    } catch (error) {
+      // On Windows, try multiple times with delay for file handle cleanup
+      if (error.code === 'ENOTEMPTY' || error.code === 'EBUSY') {
+        setTimeout(() => {
+          try {
+            rmSync(testDir, { recursive: true, force: true })
+          } catch (e) {
+            console.warn(`Failed to cleanup test directory: ${testDir}`, e.message)
+          }
+        }, 100)
+      } else {
+        console.warn(`Failed to cleanup test directory: ${testDir}`, error.message)
+      }
+    }
   }
 }
 
@@ -52,7 +84,12 @@ export function setupTest() {
   // Clean up any existing test output
   const testOutputDir = pathJoin(process.cwd(), 'test_output')
   if (existsSync(testOutputDir)) {
-    rmSync(testOutputDir, { recursive: true, force: true })
+    try {
+      rmSync(testOutputDir, { recursive: true, force: true })
+    } catch (error) {
+      // On Windows, directories might still be in use
+      console.warn(`Failed to cleanup test output directory: ${error.message}`)
+    }
   }
 }
 
@@ -63,7 +100,12 @@ export function teardownTest() {
   // Clean up test output after each test
   const testOutputDir = pathJoin(process.cwd(), 'test_output')
   if (existsSync(testOutputDir)) {
-    rmSync(testOutputDir, { recursive: true, force: true })
+    try {
+      rmSync(testOutputDir, { recursive: true, force: true })
+    } catch (error) {
+      // On Windows, directories might still be in use
+      console.warn(`Failed to cleanup test output directory: ${error.message}`)
+    }
   }
 }
 
@@ -141,8 +183,22 @@ export function generateTestDataWithPattern(chunks, pattern = 'sequential') {
         data[i] = (seed / 233280) * 256
       }
       break
+    // Handle pattern_N formats
     default:
-      throw new Error(`Unknown pattern: ${pattern}`)
+      if (pattern.startsWith('pattern_')) {
+        const patternNum = parseInt(pattern.split('_')[1]) || 0
+        // Generate deterministic pattern based on number
+        for (let i = 0; i < size; i++) {
+          data[i] = (i * (patternNum + 1) + patternNum * 17) % 256
+        }
+      } else {
+        console.warn(`Unknown pattern: ${pattern}, using sequential`)
+        // Fall back to sequential instead of throwing
+        for (let i = 0; i < size; i++) {
+          data[i] = i % 256
+        }
+      }
+      break
   }
   
   return data

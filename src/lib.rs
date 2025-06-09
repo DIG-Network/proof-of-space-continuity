@@ -235,6 +235,18 @@ impl HashChain {
                 "Block hash must be 32 bytes".to_string(),
             ));
         }
+        if block_height < 0.0 {
+            return Err(Error::new(
+                Status::InvalidArg,
+                "Block height must be non-negative".to_string(),
+            ));
+        }
+        if block_height > (u64::MAX as f64) {
+            return Err(Error::new(
+                Status::InvalidArg,
+                "Block height exceeds maximum value".to_string(),
+            ));
+        }
 
         Ok(HashChain {
             public_key,
@@ -920,6 +932,8 @@ pub fn create_anchored_ownership_commitment(
     let mut anchored_data = Vec::new();
     anchored_data.extend_from_slice(&ownership_commitment.commitment_hash);
     anchored_data.extend_from_slice(&block_commitment.block_hash);
+    // Include block height to ensure uniqueness
+    anchored_data.extend_from_slice(&(block_commitment.block_height as u64).to_be_bytes());
     let anchored_hash = compute_sha256(&anchored_data);
 
     Ok(AnchoredOwnershipCommitment {
@@ -937,6 +951,35 @@ pub fn verify_proof(
     merkle_root: Buffer,
     total_chunks: f64,
 ) -> Result<bool> {
+    // Validate input parameters first
+    if anchored_commitment.len() != HASH_SIZE {
+        return Err(Error::new(
+            Status::InvalidArg,
+            format!("Anchored commitment must be {} bytes", HASH_SIZE),
+        ));
+    }
+
+    if merkle_root.len() != HASH_SIZE {
+        return Err(Error::new(
+            Status::InvalidArg,
+            format!("Merkle root must be {} bytes", HASH_SIZE),
+        ));
+    }
+
+    if total_chunks <= 0.0 {
+        return Err(Error::new(
+            Status::InvalidArg,
+            "Total chunks must be positive".to_string(),
+        ));
+    }
+
+    if total_chunks > u32::MAX as f64 {
+        return Err(Error::new(
+            Status::InvalidArg,
+            "Total chunks exceeds maximum".to_string(),
+        ));
+    }
+
     // CONSENSUS CRITICAL: Verify proof window has exactly 8 commitments
     if proof_window.commitments.len() != PROOF_WINDOW_BLOCKS as usize {
         return Ok(false);
@@ -944,16 +987,6 @@ pub fn verify_proof(
 
     // CONSENSUS CRITICAL: Verify start commitment connects to anchored commitment
     if proof_window.start_commitment.as_ref() != anchored_commitment.as_ref() {
-        return Ok(false);
-    }
-
-    // CONSENSUS CRITICAL: Verify merkle root is properly formatted
-    if merkle_root.len() != HASH_SIZE {
-        return Ok(false);
-    }
-
-    // CONSENSUS CRITICAL: Validate total chunks is reasonable
-    if total_chunks <= 0.0 || total_chunks > u32::MAX as f64 {
         return Ok(false);
     }
 
