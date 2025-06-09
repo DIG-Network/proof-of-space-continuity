@@ -359,10 +359,10 @@ fn difficulty_to_target(difficulty: f64) -> [u8; 32] {
         // Gradual increase: 8 + log2(difficulty) * 2 for smoother progression
         8.0 + difficulty.log2() * 2.0
     };
-    
+
     let total_zero_bits = zero_bits.min(248.0); // Max 248 bits (31 bytes)
     let zero_bits = total_zero_bits as usize;
-    
+
     let zero_bytes = zero_bits / 8;
     let remaining_bits = zero_bits % 8;
 
