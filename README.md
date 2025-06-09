@@ -1,19 +1,20 @@
-# Proof of Work
+# HashChain Proof of Storage Continuity
 
-A high-performance Bitcoin-compatible proof of work library for Node.js, built with Rust and NAPI bindings. This library provides efficient mining capabilities using Bitcoin's target-based difficulty system with double SHA-256 hashing.
+A high-performance HashChain Proof of Storage Continuity (PoSC) library for Node.js, built with Rust and NAPI bindings. This library enables cryptographic proof that data remains continuously accessible over time using blockchain entropy.
+
+## Overview
+
+HashChain implements a Proof of Storage Continuity system where provers must demonstrate continuous possession of data over time. The system uses blockchain block hashes as entropy sources to create unpredictable data access patterns, preventing pre-computation attacks and ensuring genuine data availability.
 
 ## Features
 
-- **Bitcoin-Compatible**: Uses Bitcoin's target-based difficulty system with double SHA-256 hashing
-- **High Performance**: Written in Rust for maximum mining efficiency
-- **Asynchronous Mining**: Non-blocking proof of work computation that won't freeze your application
-- **Cancellable Operations**: Start mining with ability to cancel anytime using handles
-- **Progress Tracking**: Real-time progress monitoring with attempt counts and timing
-- **Unlimited Attempts**: Mine until solution is found (unless explicitly limited)
-- **Nonce Verification**: Verify that a nonce meets difficulty requirements
-- **Standardized Verification**: Consensus-critical verification with algorithm version validation
-- **Difficulty Analysis**: Calculate difficulty levels from hash values
-- **Security Features**: Tamper-resistant verification with algorithm immutability
+- **Consensus-Critical Implementation**: Network-standardized algorithms ensuring compatibility across all participants
+- **Cryptographic Security**: Production-grade Merkle proof verification with SHA256 hashing
+- **Blockchain Integration**: Uses Chia blockchain block hashes as entropy sources
+- **File-Based Storage**: Separate `.data` and `.hashchain` files with SHA256-based naming
+- **Continuous Proof Generation**: 8-block proof windows with 16-second intervals
+- **Deterministic Chunk Selection**: Consensus-compliant algorithm preventing manipulation
+- **Memory Efficient**: Minimal memory footprint supporting hundreds of concurrent instances
 - **Cross-platform Support**: Builds for Windows, macOS, and Linux
 - **Multiple Architectures**: Supports x64 and ARM64 architectures
 - **TypeScript Support**: Full TypeScript definitions included
@@ -21,310 +22,321 @@ A high-performance Bitcoin-compatible proof of work library for Node.js, built w
 ## Installation
 
 ```bash
-npm install @dignetwork/proof-of-work
+npm install @dignetwork/proof-of-space-continuity
 ```
 
 ## Quick Start
 
 ```javascript
-const { computeProofOfWorkAsync } = require('@dignetwork/proof-of-work')
+const { HashChain } = require('@dignetwork/proof-of-space-continuity')
+const fs = require('fs')
 
-async function mine() {
-  const entropySeed = Buffer.from('my_plot_entropy_seed', 'utf-8')
-  const difficulty = 1.0 // Bitcoin difficulty (1.0 = easiest)
+async function createHashChain() {
+  // Initialize with blockchain parameters
+  const publicKey = Buffer.from('your_32_byte_public_key_here...', 'hex') // 32 bytes
+  const blockHeight = 12345
+  const blockHash = Buffer.from('blockchain_block_hash_32_bytes...', 'hex') // 32 bytes
   
-  // Start mining (returns immediately with a handle)
-  const handle = computeProofOfWorkAsync(entropySeed, difficulty)
+  // Create new HashChain instance
+  const hashchain = new HashChain(publicKey, blockHeight, blockHash)
   
-  // Set up Ctrl+C handling for cancellation
-  process.on('SIGINT', () => {
-    console.log('\nCancelling mining...')
-    handle.cancel()
-    process.exit(0)
-  })
+  // Load your data
+  const data = fs.readFileSync('your_file.bin')
   
-  // Wait for completion
-  while (!handle.isCompleted() && !handle.hasError()) {
-    console.log(`Mining... attempts: ${handle.getAttempts()}`)
-    await new Promise(resolve => setTimeout(resolve, 1000))
-  }
+  // Stream data to create hashchain files (named by SHA256 of data)
+  const outputDir = './hashchain_storage'
+  hashchain.streamData(data, outputDir)
   
-  if (handle.hasError()) {
-    console.log('Mining failed:', handle.getError())
-  } else {
-    const result = handle.getResult()
-    console.log('Solution found!')
-    console.log('Nonce:', result.nonce)
-    console.log('Hash:', result.hash)
-    console.log('Attempts:', result.attempts)
-    console.log('Time:', result.time_ms, 'ms')
+  console.log('Files created:', hashchain.getFilePaths())
+  console.log('Total chunks:', hashchain.getTotalChunks())
+  console.log('Anchored commitment:', hashchain.getAnchoredCommitment()?.toString('hex'))
+  
+  // Add blockchain blocks to continue the proof of storage continuity
+  const newBlockHash = Buffer.from('next_block_hash_32_bytes...', 'hex')
+  const commitment = hashchain.addBlock(newBlockHash)
+  
+  console.log('Physical access commitment created:')
+  console.log('- Selected chunks:', commitment.selectedChunks)
+  console.log('- Block hash:', commitment.blockHash.toString('hex'))
+  console.log('- Commitment hash:', commitment.commitmentHash.toString('hex'))
+  
+  // Verify chain integrity
+  const isValid = hashchain.verifyChain()
+  console.log('Chain valid:', isValid)
+  
+  // Generate proof window after 8 blocks
+  if (hashchain.getChainLength() >= 8) {
+    const proofWindow = hashchain.getProofWindow()
+    console.log('Proof window generated with', proofWindow.commitments.length, 'commitments')
   }
 }
 
-mine().catch(console.error)
+createHashChain().catch(console.error)
 ```
 
 ## API Reference
 
-### Main Functions
+### HashChain Class
 
-#### `computeProofOfWorkAsync(entropySeed, difficulty, maxAttempts?, logAttempts?, doubleSha?): ProofOfWorkHandle`
+#### `new HashChain(publicKey, blockHeight, blockHash)`
 
-Computes proof of work asynchronously using Bitcoin's target-based difficulty system. Returns immediately with a handle for cancellation and progress tracking.
-
-**Parameters:**
-- `entropySeed` (Buffer): The entropy seed (plotId) to bind the work to
-- `difficulty` (number): Bitcoin-style difficulty level (1.0 = easiest, higher = harder)
-- `maxAttempts` (number, optional): Maximum attempts before giving up (default: unlimited)
-- `logAttempts` (boolean, optional): Whether to log each hash attempt (default: false)
-- `doubleSha` (boolean, optional): Whether to use double SHA-256 like Bitcoin (default: true)
-
-**Returns:** `ProofOfWorkHandle` for cancellation and progress tracking
-
-#### `verifyProofOfWork(entropySeed, nonce, difficulty, doubleSha?): boolean`
-
-Verifies that a nonce produces a hash that meets the Bitcoin difficulty target.
+Creates a new HashChain instance for Proof of Storage Continuity.
 
 **Parameters:**
-- `entropySeed` (Buffer): The entropy seed that was used
-- `nonce` (number): The nonce to verify
-- `difficulty` (number): The required difficulty level
-- `doubleSha` (boolean, optional): Whether to use double SHA-256 (default: true)
+- `publicKey` (Buffer): 32-byte public key for ownership commitment
+- `blockHeight` (number): Initial blockchain block height
+- `blockHash` (Buffer): Initial blockchain block hash (32 bytes)
 
-**Returns:** `true` if the nonce is valid for the given difficulty
+#### `streamData(data, outputDir): void`
 
-#### `verifyProofOfWorkStandardized(entropySeed, nonce, difficulty, expectedVersion?, doubleSha?): boolean`
-
-**CONSENSUS CRITICAL:** Standardized verification with algorithm validation. This function verifies both the proof of work AND the algorithm compatibility.
+Streams data to files with SHA256-based naming, creating `.data` and `.hashchain` files.
 
 **Parameters:**
-- `entropySeed` (Buffer): The entropy seed that was used
-- `nonce` (number): The nonce to verify
-- `difficulty` (number): The required difficulty level
-- `expectedVersion` (number, optional): Expected algorithm version (default: current)
-- `doubleSha` (boolean, optional): Whether to use double SHA-256 (default: true)
+- `data` (Buffer): The data to stream and create proofs for
+- `outputDir` (string): Directory path for output files
 
-**Returns:** `true` if the nonce is valid AND algorithm is correct
+**Files Created:**
+- `{sha256}.data` - Raw data file chunked into 4KB segments
+- `{sha256}.hashchain` - Metadata file with Merkle tree and chain links
 
-**Security Note:** Use this function for network consensus validation. It validates algorithm version compatibility and prevents tampering.
+#### `addBlock(blockHash): PhysicalAccessCommitment`
 
-### Utility Functions
-
-#### `difficultyToTargetHex(difficulty): string`
-
-Convert a Bitcoin-style difficulty to the corresponding target value as hex.
+Adds a new blockchain block to the hash chain, creating a physical access commitment.
 
 **Parameters:**
-- `difficulty` (number): The difficulty level
+- `blockHash` (Buffer): New blockchain block hash (32 bytes)
 
-**Returns:** The target as a hex string
+**Returns:** `PhysicalAccessCommitment` object with selected chunks and proofs
 
-#### `hashToDifficulty(hash): number`
+#### `getProofWindow(): ProofWindow`
 
-Calculate the difficulty that a given hash would satisfy.
+Gets proof window for the last 8 blocks (required for network submission).
+
+**Returns:** `ProofWindow` object containing commitments and Merkle proofs
+
+**Requirements:** Chain must have at least 8 blocks
+
+#### `verifyChain(): boolean`
+
+Verifies the entire hash chain follows network consensus rules.
+
+**Returns:** `true` if chain is valid, `false` otherwise
+
+#### `readChunk(chunkIdx): Buffer`
+
+Reads a specific 4KB chunk from the data file.
 
 **Parameters:**
-- `hash` (Buffer): The hash to analyze (32 bytes)
+- `chunkIdx` (number): Index of the chunk to read
 
-**Returns:** The difficulty level this hash would satisfy
+**Returns:** 4KB chunk data
 
-### Consensus & Security Functions
+#### Getters
 
-#### `getAlgorithmVersion(): number`
+- `getChainLength(): number` - Current number of blocks in chain
+- `getTotalChunks(): number` - Total number of 4KB chunks in data
+- `getCurrentCommitment(): Buffer | null` - Latest commitment hash
+- `getAnchoredCommitment(): Buffer | null` - Initial anchored commitment
+- `getFilePaths(): string[] | null` - Paths to `.hashchain` and `.data` files
 
-Get the current difficulty algorithm version. This version number is part of the network consensus.
+#### `static loadFromFile(hashchainFilePath): HashChain`
 
-**Returns:** The algorithm version number
+Loads an existing HashChain from a `.hashchain` file.
 
-#### `getAlgorithmSpec(): string`
+**Parameters:**
+- `hashchainFilePath` (string): Path to existing `.hashchain` file
 
-Get the algorithm specification hash. This hash identifies the exact algorithm implementation.
+**Returns:** Loaded `HashChain` instance
 
-**Returns:** The algorithm specification identifier
+### Consensus-Critical Functions
 
-#### `getAlgorithmParameters(): AlgorithmParameters`
+#### `selectChunksV1(blockHash, totalChunks): ChunkSelectionResult`
 
-Get the standardized difficulty algorithm parameters. These parameters are part of the network consensus.
+**CONSENSUS CRITICAL:** Standardized chunk selection algorithm V1.
 
-**Returns:** Algorithm parameters object containing:
-- `version` (number): Algorithm version number
-- `specHash` (string): Algorithm specification hash
-- `baseZeroBits` (number): Base number of zero bits for difficulty 1.0
-- `logMultiplier` (number): Logarithmic multiplier for difficulty scaling
-- `maxZeroBits` (number): Maximum allowed zero bits
+**Parameters:**
+- `blockHash` (Buffer): Block hash for entropy (32 bytes)
+- `totalChunks` (number): Total chunks in file
 
-### ProofOfWorkHandle Methods
+**Returns:** `ChunkSelectionResult` with selected indices and verification hash
 
-The handle returned by `computeProofOfWorkAsync` provides these methods:
+#### `verifyChunkSelection(blockHash, totalChunks, claimedIndices, expectedVersion?): boolean`
 
-#### `cancel(): void`
-Cancels the running proof of work computation.
+Verifies chunk selection matches network consensus algorithm.
 
-#### `isCancelled(): boolean`
-Returns `true` if the computation has been cancelled.
+**Parameters:**
+- `blockHash` (Buffer): Block hash used for selection
+- `totalChunks` (number): Total chunks in file
+- `claimedIndices` (number[]): Claimed selected chunk indices
+- `expectedVersion` (number, optional): Expected algorithm version
 
-#### `isCompleted(): boolean`
-Returns `true` if the computation has found a valid solution.
+**Returns:** `true` if selection is consensus-compliant
 
-#### `hasError(): boolean`
-Returns `true` if there was an error (cancelled or max attempts reached).
+#### `verifyProof(proofWindow, anchoredCommitment, merkleRoot, totalChunks): boolean`
 
-#### `getError(): string | null`
-Returns the error message if there was an error, or `null` if no error.
+**CONSENSUS CRITICAL:** Verifies a complete proof window with cryptographic validation.
 
-#### `getResult(): ProofOfWorkResult | null`
-Returns the result if computation completed successfully, or `null` if not completed.
+**Parameters:**
+- `proofWindow` (ProofWindow): Proof window to verify
+- `anchoredCommitment` (Buffer): Original anchored commitment (32 bytes)
+- `merkleRoot` (Buffer): Merkle root for data integrity (32 bytes)
+- `totalChunks` (number): Total chunks in original data
 
-#### `getAttempts(): bigint`
-Returns the current number of attempts made (approximate).
+**Returns:** `true` if proof is cryptographically valid
 
-#### `getProgress(): ProofOfWorkProgress`
-Returns detailed progress information (attempts, elapsed time, etc.).
+### Commitment Functions
 
-#### `getDifficulty(): number`
-Returns the difficulty level for this computation.
+#### `createOwnershipCommitment(publicKey, dataHash): OwnershipCommitment`
 
-### Result Types
+Creates an ownership commitment binding data to a public key.
 
-#### `ProofOfWorkResult`
-- `nonce` (bigint): The nonce that was found
-- `hash` (string): The resulting hash as hex string
-- `attempts` (bigint): Number of attempts made
-- `time_ms` (number): Time taken in milliseconds
-- `difficulty` (number): The difficulty that was satisfied
-- `target` (string): The target that was used (as hex string)
+**Parameters:**
+- `publicKey` (Buffer): 32-byte public key
+- `dataHash` (Buffer): 32-byte SHA256 hash of data
 
-#### `ProofOfWorkProgress`
-- `attempts` (bigint): Current number of attempts
-- `nonce` (bigint): Current nonce being tested
-- `elapsed_ms` (number): Time elapsed in milliseconds
-- `attempts_per_second` (number): Estimated attempts per second
+**Returns:** `OwnershipCommitment` object
+
+#### `createAnchoredOwnershipCommitment(ownershipCommitment, blockCommitment): AnchoredOwnershipCommitment`
+
+Creates an anchored ownership commitment combining ownership and blockchain state.
+
+**Parameters:**
+- `ownershipCommitment` (OwnershipCommitment): The ownership commitment
+- `blockCommitment` (BlockCommitment): Blockchain commitment
+
+**Returns:** `AnchoredOwnershipCommitment` object
+
+## Data Structures
+
+### `PhysicalAccessCommitment`
+- `blockHeight` (number): Blockchain block height
+- `previousCommitment` (Buffer): Previous commitment in chain (32 bytes)
+- `blockHash` (Buffer): Current block hash (32 bytes)
+- `selectedChunks` (number[]): Indices of selected chunks
+- `chunkHashes` (Buffer[]): SHA256 hashes of selected chunks
+- `commitmentHash` (Buffer): SHA256 of all fields (32 bytes)
+
+### `ProofWindow`
+- `commitments` (PhysicalAccessCommitment[]): Last 8 commitments
+- `merkleProofs` (Buffer[]): Merkle proofs for selected chunks
+- `startCommitment` (Buffer): Commitment from 8 blocks ago
+- `endCommitment` (Buffer): Latest commitment
+
+### `ChunkSelectionResult`
+- `selectedIndices` (number[]): Selected chunk indices
+- `algorithmVersion` (number): Algorithm version used
+- `totalChunks` (number): Total chunks in file
+- `blockHash` (Buffer): Block hash used for selection
+- `verificationHash` (Buffer): Hash for consensus validation
 
 ## TypeScript Usage
 
 ```typescript
 import { 
-  computeProofOfWorkAsync, 
-  verifyProofOfWork,
-  verifyProofOfWorkStandardized,
-  getAlgorithmVersion,
-  getAlgorithmParameters,
-  hashToDifficulty,
-  ProofOfWorkResult,
-  ProofOfWorkHandle,
-  AlgorithmParameters
-} from '@dignetwork/proof-of-work'
+  HashChain, 
+  selectChunksV1,
+  verifyChunkSelection,
+  verifyProof,
+  PhysicalAccessCommitment,
+  ProofWindow,
+  ChunkSelectionResult
+} from '@dignetwork/proof-of-space-continuity'
 
 async function mineWithTypes(): Promise<void> {
-  const entropySeed = Buffer.from('my_plot_entropy_seed', 'utf-8')
-  const difficulty = 2.0
+  const publicKey = Buffer.from('your_32_byte_public_key_here...', 'hex')
+  const blockHeight = 12345
+  const blockHash = Buffer.from('blockchain_block_hash_32_bytes...', 'hex')
   
-  const handle: ProofOfWorkHandle = computeProofOfWorkAsync(entropySeed, difficulty)
+  // Create HashChain with proper typing
+  const hashchain: HashChain = new HashChain(publicKey, blockHeight, blockHash)
   
-  // Wait for completion with proper typing
-  const waitForCompletion = async (handle: ProofOfWorkHandle): Promise<ProofOfWorkResult> => {
-    while (!handle.isCompleted() && !handle.hasError()) {
-      await new Promise(resolve => setTimeout(resolve, 100))
-    }
-    
-    if (handle.hasError()) {
-      throw new Error(handle.getError() || 'Unknown error')
-    }
-    
-    const result = handle.getResult()
-    if (!result) {
-      throw new Error('No result available')
-    }
-    
-    return result
-  }
+  // Stream data
+  const data = Buffer.from('your data here')
+  hashchain.streamData(data, './output')
   
-  const result: ProofOfWorkResult = await waitForCompletion(handle)
+  // Add blocks with typed returns
+  const newBlockHash = Buffer.from('next_block_hash...', 'hex')
+  const commitment: PhysicalAccessCommitment = hashchain.addBlock(newBlockHash)
   
-  // Standard verification
-  const isValid: boolean = verifyProofOfWork(
-    entropySeed, 
-    Number(result.nonce), 
-    difficulty
+  // Type-safe chunk selection
+  const result: ChunkSelectionResult = selectChunksV1(blockHash, 100)
+  const isValid: boolean = verifyChunkSelection(
+    blockHash, 
+    100, 
+    result.selectedIndices
   )
   
-  // Standardized verification (recommended for networks)
-  const isStandardValid: boolean = verifyProofOfWorkStandardized(
-    entropySeed,
-    Number(result.nonce),
-    difficulty
-  )
-  
-  // Check algorithm parameters
-  const params: AlgorithmParameters = getAlgorithmParameters()
-  console.log(`Algorithm version: ${params.version}`)
-  console.log(`Algorithm spec: ${params.specHash}`)
-  
-  console.log('Mining completed, valid:', isValid)
-  console.log('Consensus valid:', isStandardValid)
+  console.log('Chunk selection valid:', isValid)
+  console.log('Selected chunks:', result.selectedIndices)
 }
 ```
 
-## Difficulty System
+## Network Consensus
 
-This library uses Bitcoin's target-based difficulty system:
-
-- **Difficulty 1.0**: Easiest level, requires 8 leading zero bits in hash
-- **Difficulty 2.0**: Requires 12 leading zero bits
-- **Difficulty 4.0**: Requires 16 leading zero bits (2 zero bytes)
-- **Higher difficulties**: Exponentially more difficult
-
-The difficulty directly corresponds to how computationally expensive it is to find a valid nonce.
-
-## Security & Consensus
-
-This library implements a **consensus-critical verification system** to prevent tampering and ensure network compatibility.
+This library implements **consensus-critical algorithms** that must be identical across all network participants.
 
 ### Algorithm Standardization
 
-- **Version 1 Specification**: `DIG_POW_V1_SMOOTH_LOG_DIFFICULTY_2024`
-- **Formula**: `zero_bits = 8 + log2(difficulty) * 2`
-- **Immutable Parameters**: All difficulty calculation parameters are locked constants
-- **Version Validation**: Algorithm version must match across all network participants
+- **Chunk Selection V1**: Deterministic SHA256-based selection with retry logic
+- **Proof Window**: Exactly 8 blocks (2 minutes at 16-second intervals)
+- **Chunk Size**: 4KB (4096 bytes) fixed size
+- **Chunks Per Block**: 4 chunks selected per block
+- **File Format**: Network-standard binary format with big-endian byte order
 
 ### Security Guarantees
 
-1. **Tamper Detection**: Algorithm spec hash prevents silent modifications
-2. **Version Enforcement**: Mismatched versions are rejected automatically
-3. **Consensus Compliance**: All parameters are immutable constants
-4. **Network Compatibility**: Ensures identical verification across nodes
-5. **Upgrade Safety**: Algorithm changes require coordinated hard forks
+1. **Deterministic Selection**: Same inputs always produce same chunk selections
+2. **Tamper Detection**: Cryptographic hashes prevent data modification
+3. **Continuous Proof**: Gaps in chain require full recomputation
+4. **Network Compatibility**: Consensus compliance across all validators
+5. **Storage Requirement**: Must maintain full dataset for unpredictable access
 
-### Usage for Network Consensus
+### Consensus Constants
 
 ```javascript
-// For production networks: Always use standardized verification
-const isValid = verifyProofOfWorkStandardized(entropySeed, nonce, difficulty)
-
-// Check algorithm compatibility
-const version = getAlgorithmVersion()  // Returns: 1
-const spec = getAlgorithmSpec()        // Returns: "DIG_POW_V1_SMOOTH_LOG_DIFFICULTY_2024"
-
-// Validate all proofs with version checking
-function validateNetworkProof(entropySeed, nonce, difficulty) {
-  return verifyProofOfWorkStandardized(entropySeed, nonce, difficulty, 1)
-}
+// These constants are part of network consensus and cannot be changed
+const PROOF_WINDOW_BLOCKS = 8        // 8 blocks (2 minutes)
+const CHUNK_SIZE_BYTES = 4096        // 4KB chunks
+const CHUNKS_PER_BLOCK = 4           // 4 chunks per block
+const CHUNK_SELECTION_VERSION = 1    // Algorithm version
+const HASHCHAIN_FORMAT_VERSION = 1   // File format version
 ```
 
-### Network Upgrade Process
+## File Format
 
-To change the difficulty algorithm:
-1. Define new algorithm version (e.g., version 2)
-2. Update consensus parameters and spec hash
-3. Coordinate hard fork across all network participants
-4. Validate version compatibility on peer connections
+### HashChain Files
 
-## Performance Tips
+- **`.data` files**: Raw data chunked into 4KB segments with padding
+- **`.hashchain` files**: Metadata with Merkle tree and commitment chain
+- **Naming**: Files named by SHA256 hash of data content
+- **Format**: Network-consensus binary format (184-byte header)
 
-1. **Use appropriate difficulty levels**: Start with 1.0-4.0 for testing
-2. **Monitor progress**: Use the handle to track mining progress
-3. **Set reasonable limits**: Use `maxAttempts` for time-critical applications
-4. **Handle cancellation**: Always provide a way to cancel long-running operations
+### File Structure
+
+```
+{sha256_hash}.data     - Raw data file (4KB chunks)
+{sha256_hash}.hashchain - Metadata file:
+  ├── Header (184 bytes)
+  ├── Merkle Tree Section
+  ├── Hash Chain Section  
+  └── Footer (40 bytes)
+```
+
+## Performance Characteristics
+
+- **Memory Usage**: ~1KB per HashChain instance
+- **Block Addition**: <100ms per block (typical)
+- **Proof Generation**: <500ms for 8-block window
+- **Concurrent Instances**: 100+ supported simultaneously
+- **File Operations**: Optimized for SSD storage
+
+## Use Cases
+
+1. **Decentralized Storage Networks**: Prove continuous data availability
+2. **Blockchain Integration**: Timestamped storage proofs on Chia blockchain
+3. **Data Integrity Verification**: Cryptographic proof of data possession
+4. **Storage Provider Validation**: Verify storage providers maintain data
+5. **Incentive Mechanisms**: Reward continuous storage over time
 
 ## Development
 
@@ -339,7 +351,7 @@ To change the difficulty algorithm:
 ```bash
 # Clone and install dependencies
 git clone <repository-url>
-cd proof-of-work
+cd proof-of-storage-continuity
 npm install
 
 # Build the native module
@@ -352,25 +364,40 @@ npm test
 ### Project Structure
 
 ```
-proof-of-work/
+proof-of-storage-continuity/
 ├── src/
-│   └── lib.rs          # Rust implementation with NAPI bindings
+│   └── lib.rs              # Rust implementation with NAPI bindings
 ├── __test__/
-│   └── index.spec.mjs  # Test suite
-├── npm/                # Platform-specific native binaries
-├── .github/workflows/  # CI/CD pipeline
-├── Cargo.toml          # Rust configuration
-├── package.json        # Node.js configuration
-└── index.d.ts          # TypeScript definitions
+│   └── index.spec.mjs      # Test suite (40 comprehensive tests)
+├── docs/
+│   └── hashchain.md        # Technical specification
+├── npm/                    # Platform-specific native binaries
+├── .github/workflows/      # CI/CD pipeline
+├── Cargo.toml              # Rust configuration
+├── package.json            # Node.js configuration
+└── index.d.ts              # TypeScript definitions
 ```
 
-## CI/CD & Publishing
+## Testing
 
-This project uses GitHub Actions for:
-- Cross-platform builds (Windows, macOS, Linux)
-- Multiple architectures (x64, ARM64)
-- Automated testing
-- npm publishing based on commit messages
+The project includes 40 comprehensive tests covering:
+
+```bash
+npm test  # Run all tests
+
+# Test categories:
+# - Constructor validation (3 tests)
+# - Data streaming (4 tests) 
+# - Chunk selection algorithm (5 tests)
+# - Commitment creation (3 tests)
+# - Chain management (4 tests)
+# - File I/O operations (4 tests)
+# - Integration workflows (3 tests)
+# - Proof window generation (2 tests)
+# - Production verification (3 tests)
+# - Edge cases & error handling (4 tests)
+# - Stress testing (5 tests)
+```
 
 ## License
 
@@ -385,3 +412,7 @@ MIT
 5. Commit your changes (`git commit -m 'Add some amazing feature'`)
 6. Push to the branch (`git push origin feature/amazing-feature`)
 7. Open a Pull Request
+
+## Specification
+
+For detailed technical specifications, see [hashchain.md](docs/hashchain.md).
