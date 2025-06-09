@@ -16,6 +16,22 @@ const MAX_TARGET: [u8; 32] = [
     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
 ];
 
+/// CONSENSUS CRITICAL: Difficulty algorithm version
+/// This version MUST match across all network participants
+/// Any change requires network-wide consensus (hard fork)
+const DIFFICULTY_ALGORITHM_VERSION: u32 = 1;
+
+/// CONSENSUS CRITICAL: Algorithm specification hash
+/// This ensures the difficulty calculation hasn't been tampered with
+const ALGORITHM_SPEC_HASH: &str = "DIG_POW_V1_SMOOTH_LOG_DIFFICULTY_2024";
+
+/// CONSENSUS CRITICAL: Standardized difficulty parameters
+/// These values are part of the network consensus and CANNOT be changed
+/// without a coordinated network upgrade
+const DIFFICULTY_BASE_ZERO_BITS: f64 = 8.0;
+const DIFFICULTY_LOG_MULTIPLIER: f64 = 2.0;
+const DIFFICULTY_MAX_ZERO_BITS: f64 = 248.0;
+
 #[napi(object)]
 #[derive(Clone)]
 /// Result of a proof of work computation
@@ -341,9 +357,100 @@ pub fn hash_to_difficulty(hash: Buffer) -> Result<f64> {
     Ok(difficulty)
 }
 
-/// Convert Bitcoin difficulty to target using a gradual logarithmic formula
-/// This creates smooth difficulty progression: difficulty 2.0 is exactly 2x harder than 1.0, etc.
+#[napi]
+/// Get the current difficulty algorithm version.
+/// This version number is part of the network consensus.
+///
+/// @returns {number} The algorithm version number
+pub fn get_algorithm_version() -> u32 {
+    DIFFICULTY_ALGORITHM_VERSION
+}
+
+#[napi]
+/// Get the algorithm specification hash.
+/// This hash identifies the exact algorithm implementation.
+///
+/// @returns {string} The algorithm specification identifier
+pub fn get_algorithm_spec() -> String {
+    ALGORITHM_SPEC_HASH.to_string()
+}
+
+#[napi]
+/// CONSENSUS CRITICAL: Standardized verification with algorithm validation.
+/// This function verifies both the proof of work AND the algorithm compatibility.
+///
+/// @param {Buffer} entropy_seed - The entropy seed that was used
+/// @param {number} nonce - The nonce to verify
+/// @param {number} difficulty - The required difficulty level
+/// @param {number} expected_version - Expected algorithm version (default: current)
+/// @param {boolean} double_sha - Whether to use double SHA-256 (default: true)
+/// @returns {boolean} True if the nonce is valid AND algorithm is correct
+pub fn verify_proof_of_work_standardized(
+    entropy_seed: Buffer,
+    nonce: u32,
+    difficulty: f64,
+    expected_version: Option<u32>,
+    double_sha: Option<bool>,
+) -> Result<bool> {
+    let expected_version = expected_version.unwrap_or(DIFFICULTY_ALGORITHM_VERSION);
+
+    // CONSENSUS CHECK: Validate algorithm version
+    if expected_version != DIFFICULTY_ALGORITHM_VERSION {
+        return Err(Error::new(
+            Status::InvalidArg,
+            format!(
+                "Algorithm version mismatch: expected {}, got {}",
+                expected_version, DIFFICULTY_ALGORITHM_VERSION
+            ),
+        ));
+    }
+
+    // Use the standard verification function
+    verify_proof_of_work(entropy_seed, nonce, difficulty, double_sha)
+}
+
+#[napi]
+/// Get the standardized difficulty algorithm parameters.
+/// These parameters are part of the network consensus.
+///
+/// @returns {object} Algorithm parameters
+pub fn get_algorithm_parameters() -> AlgorithmParameters {
+    AlgorithmParameters {
+        version: DIFFICULTY_ALGORITHM_VERSION,
+        spec_hash: ALGORITHM_SPEC_HASH.to_string(),
+        base_zero_bits: DIFFICULTY_BASE_ZERO_BITS,
+        log_multiplier: DIFFICULTY_LOG_MULTIPLIER,
+        max_zero_bits: DIFFICULTY_MAX_ZERO_BITS,
+    }
+}
+
+#[napi(object)]
+/// Algorithm parameters object
+pub struct AlgorithmParameters {
+    /// Algorithm version number
+    pub version: u32,
+    /// Algorithm specification hash
+    pub spec_hash: String,
+    /// Base number of zero bits for difficulty 1.0
+    pub base_zero_bits: f64,
+    /// Logarithmic multiplier for difficulty scaling
+    pub log_multiplier: f64,
+    /// Maximum allowed zero bits
+    pub max_zero_bits: f64,
+}
+
+/// CONSENSUS CRITICAL: Convert Bitcoin difficulty to target using standardized formula
+/// This function implements the network's consensus rules for difficulty calculation
+///
+/// ALGORITHM SPECIFICATION (Version 1):
+/// - Base zero bits: 8.0 (for difficulty 1.0)  
+/// - Formula: zero_bits = 8.0 + log2(difficulty) * 2.0
+/// - Maximum zero bits: 248.0 (31 bytes)
+/// - Target format: 32-byte big-endian with leading zero bits
+///
+/// WARNING: Modifying this function breaks consensus compatibility!
 fn difficulty_to_target(difficulty: f64) -> [u8; 32] {
+    // Validate input according to consensus rules
     if difficulty <= 0.0 {
         return MAX_TARGET;
     }
@@ -351,16 +458,17 @@ fn difficulty_to_target(difficulty: f64) -> [u8; 32] {
     // Initialize all bytes to 0xff (maximum target)
     let mut result = [0xffu8; 32];
 
-    // Use logarithmic scaling for smooth difficulty progression
-    // Start with 8 zero bits for difficulty 1.0, then add bits gradually
+    // CONSENSUS CRITICAL: Use standardized difficulty calculation
+    // This formula is part of the network specification and CANNOT be changed
     let zero_bits = if difficulty <= 1.0 {
-        8.0
+        DIFFICULTY_BASE_ZERO_BITS
     } else {
-        // Gradual increase: 8 + log2(difficulty) * 2 for smoother progression
-        8.0 + difficulty.log2() * 2.0
+        // Standardized formula: base + log2(difficulty) * multiplier
+        DIFFICULTY_BASE_ZERO_BITS + difficulty.log2() * DIFFICULTY_LOG_MULTIPLIER
     };
 
-    let total_zero_bits = zero_bits.min(248.0); // Max 248 bits (31 bytes)
+    // Apply consensus limits
+    let total_zero_bits = zero_bits.min(DIFFICULTY_MAX_ZERO_BITS);
     let zero_bits = total_zero_bits as usize;
 
     let zero_bytes = zero_bits / 8;

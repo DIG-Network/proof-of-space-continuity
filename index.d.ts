@@ -65,6 +65,52 @@ export declare function difficultyToTargetHex(difficulty: number): string
  * @returns {number} The difficulty level this hash would satisfy
  */
 export declare function hashToDifficulty(hash: Buffer): number
+/**
+ * Get the current difficulty algorithm version.
+ * This version number is part of the network consensus.
+ *
+ * @returns {number} The algorithm version number
+ */
+export declare function getAlgorithmVersion(): number
+/**
+ * Get the algorithm specification hash.
+ * This hash identifies the exact algorithm implementation.
+ *
+ * @returns {string} The algorithm specification identifier
+ */
+export declare function getAlgorithmSpec(): string
+/**
+ * CONSENSUS CRITICAL: Standardized verification with algorithm validation.
+ * This function verifies both the proof of work AND the algorithm compatibility.
+ *
+ * @param {Buffer} entropy_seed - The entropy seed that was used
+ * @param {number} nonce - The nonce to verify
+ * @param {number} difficulty - The required difficulty level
+ * @param {number} expected_version - Expected algorithm version (default: current)
+ * @param {boolean} double_sha - Whether to use double SHA-256 (default: true)
+ * @returns {boolean} True if the nonce is valid AND algorithm is correct
+ */
+export declare function verifyProofOfWorkStandardized(entropySeed: Buffer, nonce: number, difficulty: number, expectedVersion?: number | undefined | null, doubleSha?: boolean | undefined | null): boolean
+/**
+ * Get the standardized difficulty algorithm parameters.
+ * These parameters are part of the network consensus.
+ *
+ * @returns {object} Algorithm parameters
+ */
+export declare function getAlgorithmParameters(): AlgorithmParameters
+/** Algorithm parameters object */
+export interface AlgorithmParameters {
+  /** Algorithm version number */
+  version: number
+  /** Algorithm specification hash */
+  specHash: string
+  /** Base number of zero bits for difficulty 1.0 */
+  baseZeroBits: number
+  /** Logarithmic multiplier for difficulty scaling */
+  logMultiplier: number
+  /** Maximum allowed zero bits */
+  maxZeroBits: number
+}
 /** Handle for cancelling a proof of work computation */
 export declare class ProofOfWorkHandle {
   /** Cancel the proof of work computation */

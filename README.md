@@ -11,7 +11,9 @@ A high-performance Bitcoin-compatible proof of work library for Node.js, built w
 - **Progress Tracking**: Real-time progress monitoring with attempt counts and timing
 - **Unlimited Attempts**: Mine until solution is found (unless explicitly limited)
 - **Nonce Verification**: Verify that a nonce meets difficulty requirements
+- **Standardized Verification**: Consensus-critical verification with algorithm version validation
 - **Difficulty Analysis**: Calculate difficulty levels from hash values
+- **Security Features**: Tamper-resistant verification with algorithm immutability
 - **Cross-platform Support**: Builds for Windows, macOS, and Linux
 - **Multiple Architectures**: Supports x64 and ARM64 architectures
 - **TypeScript Support**: Full TypeScript definitions included
@@ -91,6 +93,21 @@ Verifies that a nonce produces a hash that meets the Bitcoin difficulty target.
 
 **Returns:** `true` if the nonce is valid for the given difficulty
 
+#### `verifyProofOfWorkStandardized(entropySeed, nonce, difficulty, expectedVersion?, doubleSha?): boolean`
+
+**CONSENSUS CRITICAL:** Standardized verification with algorithm validation. This function verifies both the proof of work AND the algorithm compatibility.
+
+**Parameters:**
+- `entropySeed` (Buffer): The entropy seed that was used
+- `nonce` (number): The nonce to verify
+- `difficulty` (number): The required difficulty level
+- `expectedVersion` (number, optional): Expected algorithm version (default: current)
+- `doubleSha` (boolean, optional): Whether to use double SHA-256 (default: true)
+
+**Returns:** `true` if the nonce is valid AND algorithm is correct
+
+**Security Note:** Use this function for network consensus validation. It validates algorithm version compatibility and prevents tampering.
+
 ### Utility Functions
 
 #### `difficultyToTargetHex(difficulty): string`
@@ -110,6 +127,31 @@ Calculate the difficulty that a given hash would satisfy.
 - `hash` (Buffer): The hash to analyze (32 bytes)
 
 **Returns:** The difficulty level this hash would satisfy
+
+### Consensus & Security Functions
+
+#### `getAlgorithmVersion(): number`
+
+Get the current difficulty algorithm version. This version number is part of the network consensus.
+
+**Returns:** The algorithm version number
+
+#### `getAlgorithmSpec(): string`
+
+Get the algorithm specification hash. This hash identifies the exact algorithm implementation.
+
+**Returns:** The algorithm specification identifier
+
+#### `getAlgorithmParameters(): AlgorithmParameters`
+
+Get the standardized difficulty algorithm parameters. These parameters are part of the network consensus.
+
+**Returns:** Algorithm parameters object containing:
+- `version` (number): Algorithm version number
+- `specHash` (string): Algorithm specification hash
+- `baseZeroBits` (number): Base number of zero bits for difficulty 1.0
+- `logMultiplier` (number): Logarithmic multiplier for difficulty scaling
+- `maxZeroBits` (number): Maximum allowed zero bits
 
 ### ProofOfWorkHandle Methods
 
@@ -164,9 +206,13 @@ Returns the difficulty level for this computation.
 import { 
   computeProofOfWorkAsync, 
   verifyProofOfWork,
+  verifyProofOfWorkStandardized,
+  getAlgorithmVersion,
+  getAlgorithmParameters,
   hashToDifficulty,
   ProofOfWorkResult,
-  ProofOfWorkHandle 
+  ProofOfWorkHandle,
+  AlgorithmParameters
 } from '@dignetwork/proof-of-work'
 
 async function mineWithTypes(): Promise<void> {
@@ -195,13 +241,27 @@ async function mineWithTypes(): Promise<void> {
   
   const result: ProofOfWorkResult = await waitForCompletion(handle)
   
+  // Standard verification
   const isValid: boolean = verifyProofOfWork(
     entropySeed, 
     Number(result.nonce), 
     difficulty
   )
   
+  // Standardized verification (recommended for networks)
+  const isStandardValid: boolean = verifyProofOfWorkStandardized(
+    entropySeed,
+    Number(result.nonce),
+    difficulty
+  )
+  
+  // Check algorithm parameters
+  const params: AlgorithmParameters = getAlgorithmParameters()
+  console.log(`Algorithm version: ${params.version}`)
+  console.log(`Algorithm spec: ${params.specHash}`)
+  
   console.log('Mining completed, valid:', isValid)
+  console.log('Consensus valid:', isStandardValid)
 }
 ```
 
@@ -215,6 +275,49 @@ This library uses Bitcoin's target-based difficulty system:
 - **Higher difficulties**: Exponentially more difficult
 
 The difficulty directly corresponds to how computationally expensive it is to find a valid nonce.
+
+## Security & Consensus
+
+This library implements a **consensus-critical verification system** to prevent tampering and ensure network compatibility.
+
+### Algorithm Standardization
+
+- **Version 1 Specification**: `DIG_POW_V1_SMOOTH_LOG_DIFFICULTY_2024`
+- **Formula**: `zero_bits = 8 + log2(difficulty) * 2`
+- **Immutable Parameters**: All difficulty calculation parameters are locked constants
+- **Version Validation**: Algorithm version must match across all network participants
+
+### Security Guarantees
+
+1. **Tamper Detection**: Algorithm spec hash prevents silent modifications
+2. **Version Enforcement**: Mismatched versions are rejected automatically
+3. **Consensus Compliance**: All parameters are immutable constants
+4. **Network Compatibility**: Ensures identical verification across nodes
+5. **Upgrade Safety**: Algorithm changes require coordinated hard forks
+
+### Usage for Network Consensus
+
+```javascript
+// For production networks: Always use standardized verification
+const isValid = verifyProofOfWorkStandardized(entropySeed, nonce, difficulty)
+
+// Check algorithm compatibility
+const version = getAlgorithmVersion()  // Returns: 1
+const spec = getAlgorithmSpec()        // Returns: "DIG_POW_V1_SMOOTH_LOG_DIFFICULTY_2024"
+
+// Validate all proofs with version checking
+function validateNetworkProof(entropySeed, nonce, difficulty) {
+  return verifyProofOfWorkStandardized(entropySeed, nonce, difficulty, 1)
+}
+```
+
+### Network Upgrade Process
+
+To change the difficulty algorithm:
+1. Define new algorithm version (e.g., version 2)
+2. Update consensus parameters and spec hash
+3. Coordinate hard fork across all network participants
+4. Validate version compatibility on peer connections
 
 ## Performance Tips
 

@@ -1,6 +1,6 @@
 {
   "name": "@dignetwork/proof-of-work-linux-arm64-gnu",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "repository": {
     "type": "git",
     "url": "https://github.com/DIG-Network/proof-of-work"

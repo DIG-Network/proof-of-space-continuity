@@ -310,10 +310,14 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`)
 }
 
-const { ProofOfWorkHandle, computeProofOfWorkAsync, verifyProofOfWork, difficultyToTargetHex, hashToDifficulty } = nativeBinding
+const { ProofOfWorkHandle, computeProofOfWorkAsync, verifyProofOfWork, difficultyToTargetHex, hashToDifficulty, getAlgorithmVersion, getAlgorithmSpec, verifyProofOfWorkStandardized, getAlgorithmParameters } = nativeBinding
 
 module.exports.ProofOfWorkHandle = ProofOfWorkHandle
 module.exports.computeProofOfWorkAsync = computeProofOfWorkAsync
 module.exports.verifyProofOfWork = verifyProofOfWork
 module.exports.difficultyToTargetHex = difficultyToTargetHex
 module.exports.hashToDifficulty = hashToDifficulty
+module.exports.getAlgorithmVersion = getAlgorithmVersion
+module.exports.getAlgorithmSpec = getAlgorithmSpec
+module.exports.verifyProofOfWorkStandardized = verifyProofOfWorkStandardized
+module.exports.getAlgorithmParameters = getAlgorithmParameters
