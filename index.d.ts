@@ -63,7 +63,13 @@ export interface HashChainHeader {
   anchoredCommitment: Buffer
   /** Number of chain links (4 bytes) */
   chainLength: number
-  /** SHA256 of header fields 0-151 (32 bytes) */
+  /** Prover's public key (32 bytes) */
+  publicKey: Buffer
+  /** Initial blockchain block height (8 bytes) */
+  initialBlockHeight: number
+  /** Initial blockchain block hash (32 bytes) */
+  initialBlockHash: Buffer
+  /** SHA256 of header fields (32 bytes) */
   headerChecksum: Buffer
 }
 /** Proof window containing last 8 commitments for verification */

@@ -233,9 +233,10 @@ test('file system edge cases', async (t) => {
   t.true(existsSync(filePaths[0]))
   t.true(existsSync(filePaths[1]))
   
-  // Verify files are in the correct nested location
-  t.true(filePaths[0].includes('deeply/nested/path'))
-  t.true(filePaths[1].includes('deeply/nested/path'))
+  // Verify files are in the correct nested location (platform-agnostic)
+  const expectedPath = join('deeply', 'nested', 'path')
+  t.true(filePaths[0].includes(expectedPath))
+  t.true(filePaths[1].includes(expectedPath))
   
   cleanupTestDir(testDir)
 })

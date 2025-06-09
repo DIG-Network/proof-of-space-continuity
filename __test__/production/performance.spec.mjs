@@ -90,7 +90,7 @@ test('memory efficiency with multiple instances', async t => {
     const createStart = Date.now()
     
     for (let i = 0; i < instanceCount; i++) {
-      const testData = createTestData(4096) // 1 chunk each
+      const testData = createTestData(16384) // 4 chunks each (minimum required)
       const hashchain = new HashChain(TEST_PUBLIC_KEY, TEST_BLOCK_HEIGHT + i, TEST_BLOCK_HASH)
       hashchain.streamData(testData, testDir)
       instances.push(hashchain)
@@ -101,7 +101,7 @@ test('memory efficiency with multiple instances', async t => {
     
     // All instances should be independent
     for (let i = 0; i < instances.length; i++) {
-      t.is(instances[i].getTotalChunks(), 1)
+      t.is(instances[i].getTotalChunks(), 4)
       
       // Add blocks to each
       instances[i].addBlock(generateBlockHash(i))
