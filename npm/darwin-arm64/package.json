@@ -1,0 +1,22 @@
+{
+  "name": "@dignetwork/proof-of-work-darwin-arm64",
+  "version": "0.1.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DIG-Network/proof-of-work"
+  },
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "main": "proof-of-work.darwin-arm64.node",
+  "files": [
+    "proof-of-work.darwin-arm64.node"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">= 10"
+  }
+} 

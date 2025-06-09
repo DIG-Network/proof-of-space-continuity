@@ -1,0 +1,22 @@
+{
+  "name": "@dignetwork/proof-of-work-win32-x64-msvc",
+  "version": "0.1.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DIG-Network/proof-of-work"
+  },
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "main": "proof-of-work.win32-x64-msvc.node",
+  "files": [
+    "proof-of-work.win32-x64-msvc.node"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">= 10"
+  }
+} 
