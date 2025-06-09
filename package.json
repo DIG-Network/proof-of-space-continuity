@@ -24,7 +24,8 @@
   "ava": {
     "timeout": "3m",
     "files": [
-      "__test__/**/*"
+      "__test__/**/*.spec.mjs",
+      "__test__/**/*.test.mjs"
     ]
   },
   "engines": {
