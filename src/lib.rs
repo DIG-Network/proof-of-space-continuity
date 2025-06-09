@@ -137,6 +137,26 @@ pub struct ChunkSelectionResult {
 
 #[napi(object)]
 #[derive(Clone)]
+/// Complete chain data structure
+pub struct ChainData {
+    /// Anchored commitment hash (hex)
+    pub anchored_commitment: String,
+    /// Initial blockchain block height
+    pub initial_block_height: f64,
+    /// Initial blockchain block hash (hex)
+    pub initial_block_hash: String,
+    /// Total number of chunks
+    pub total_chunks: f64,
+    /// Consensus algorithm version
+    pub consensus_algorithm_version: u32,
+    /// Chain length
+    pub chain_length: u32,
+    /// All commitments in the chain
+    pub commitments: Vec<PhysicalAccessCommitment>,
+}
+
+#[napi(object)]
+#[derive(Clone)]
 /// Human-readable information about HashChain state
 pub struct HashChainInfo {
     /// Current status: "uninitialized", "initialized", "building", "active"
@@ -169,6 +189,8 @@ pub struct HashChainInfo {
     pub consensus_algorithm_version: u32,
     /// Initial blockchain block height
     pub initial_block_height: f64,
+    /// Complete chain data as structured object
+    pub chain_data_json: Option<ChainData>,
 }
 
 /// Main HashChain implementation for Proof of Storage Continuity
@@ -616,6 +638,30 @@ impl HashChain {
         self.data_file_path.clone()
     }
 
+    /// Generate complete chain data as structured object
+    fn generate_chain_data(&self, hashchain_path: &str) -> Result<ChainData> {
+        // Read all commitments from the chain
+        let commitments = if self.chain_length > 0 {
+            read_last_n_commitments_from_file(hashchain_path, self.chain_length as usize)?
+        } else {
+            Vec::new()
+        };
+
+        Ok(ChainData {
+            anchored_commitment: self
+                .anchored_commitment
+                .as_ref()
+                .map(|c| hex::encode(c.as_ref()))
+                .unwrap_or_default(),
+            initial_block_height: self.initial_block_height as f64,
+            initial_block_hash: hex::encode(self.initial_block_hash.as_ref()),
+            total_chunks: self.total_chunks as f64,
+            consensus_algorithm_version: CHUNK_SELECTION_VERSION,
+            chain_length: self.chain_length,
+            commitments,
+        })
+    }
+
     /// Get comprehensive information about the HashChain state
     #[napi]
     pub fn get_chain_info(&self) -> Result<HashChainInfo> {
@@ -660,6 +706,29 @@ impl HashChain {
         let chunk_storage_mb =
             (self.total_chunks as f64 * CHUNK_SIZE_BYTES as f64) / (1024.0 * 1024.0);
 
+        // Generate complete chain data as structured object
+        let chain_data_json = if let Some(hashchain_path) = &hashchain_path {
+            if self.chain_length > 0 {
+                match self.generate_chain_data(hashchain_path) {
+                    Ok(chain_data) => Some(chain_data),
+                    Err(_) => None, // Return None if we can't read the chain data
+                }
+            } else {
+                // Return empty chain structure for initialized but empty chains
+                Some(ChainData {
+                    anchored_commitment: anchored_commitment_hex.as_deref().unwrap_or("").to_string(),
+                    initial_block_height: self.initial_block_height as f64,
+                    initial_block_hash: hex::encode(self.initial_block_hash.as_ref()),
+                    total_chunks: self.total_chunks as f64,
+                    consensus_algorithm_version: CHUNK_SELECTION_VERSION,
+                    chain_length: self.chain_length,
+                    commitments: Vec::new(),
+                })
+            }
+        } else {
+            None
+        };
+
         Ok(HashChainInfo {
             status,
             total_chunks: self.total_chunks as f64,
@@ -680,6 +749,7 @@ impl HashChain {
             },
             consensus_algorithm_version: CHUNK_SELECTION_VERSION,
             initial_block_height: self.initial_block_height as f64,
+            chain_data_json,
         })
     }
 }
