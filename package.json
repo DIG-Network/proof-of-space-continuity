@@ -37,7 +37,12 @@
     "prepublishOnly": "napi prepublish -t npm",
     "test": "ava",
     "universal": "napi universal",
-    "version": "napi version"
+    "version": "napi version",
+    "clippy": "cargo clippy --workspace --all-features --all-targets",
+    "install-machete": "cargo install cargo-machete --locked",
+    "fmt-check": "cargo fmt --all -- --files-with-diff --check",
+    "lint": "npm run clippy && npm run fmt-check",
+    "lint-with-machete": "npm run clippy && npm run install-machete && npm run fmt-check"
   },
   "packageManager": "yarn@4.3.1"
 } 
