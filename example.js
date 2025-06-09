@@ -180,7 +180,7 @@ async function runHashChainExample() {
       }
     }
 
-    console.log(`   📏 Chain length: ${hashchain.getChainLength()} blocks`)
+    console.log(`   📏 Chain length: ${hashchain.getChainLength()} blocks.`)
     console.log(`   💪 Comprehensive validation ready with ${totalChunks} chunks and ${hashchain.getChainLength()} blocks`)
 
     // Show updated chain information after adding blocks
