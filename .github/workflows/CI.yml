@@ -1,7 +1,7 @@
 name: CI
 env:
   DEBUG: napi:*
-  APP_NAME: proof-of-space-continuity
+  APP_NAME: proof-of-storage-continuity
   MACOSX_DEPLOYMENT_TARGET: '10.13'
 permissions:
   contents: write

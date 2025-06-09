@@ -24,13 +24,13 @@ HashChain implements a Proof of Storage Continuity system where provers must dem
 ## Installation
 
 ```bash
-npm install @dignetwork/proof-of-space-continuity
+npm install @dignetwork/proof-of-storage-continuity
 ```
 
 ## Quick Start
 
 ```javascript
-const { HashChain } = require('@dignetwork/proof-of-space-continuity')
+const { HashChain } = require('@dignetwork/proof-of-storage-continuity')
 const fs = require('fs')
 
 async function createHashChain() {
@@ -175,7 +175,7 @@ Verifies chunk selection matches network consensus algorithm.
 
 **Returns:** `true` if selection is consensus-compliant
 
-#### `verifyProof(proofWindow, anchoredCommitment, merkleRoot, totalChunks): boolean`
+#### `verifyProofOfStorageContinuity(proofWindow, anchoredCommitment, merkleRoot, totalChunks): boolean`
 
 **CONSENSUS CRITICAL:** Verifies a complete proof window with cryptographic validation.
 
@@ -239,11 +239,11 @@ import {
   HashChain, 
   selectChunksV1,
   verifyChunkSelection,
-  verifyProof,
+  verifyProofOfStorageContinuity,
   PhysicalAccessCommitment,
   ProofWindow,
   ChunkSelectionResult
-} from '@dignetwork/proof-of-space-continuity'
+} from '@dignetwork/proof-of-storage-continuity'
 
 async function mineWithTypes(): Promise<void> {
   const publicKey = Buffer.from('your_32_byte_public_key_here...', 'hex')

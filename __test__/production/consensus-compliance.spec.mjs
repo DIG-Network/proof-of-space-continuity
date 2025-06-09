@@ -3,7 +3,7 @@ import {
   HashChain, 
   selectChunksV1, 
   verifyChunkSelection,
-  verifyProof 
+  verifyProofOfStorageContinuity
 } from '../../index.js'
 import { 
   TEST_PUBLIC_KEY, 
@@ -354,11 +354,11 @@ test('verification consensus compliance', (t) => {
   const merkleRoot = Buffer.alloc(32, 0xaa)
   
   // Test consensus verification requirements
-  const verifyResult = verifyProof(proofWindow, anchoredCommitment, merkleRoot, 6)
+  const verifyResult = verifyProofOfStorageContinuity(proofWindow, anchoredCommitment, merkleRoot, 6)
   
   // Basic structure verification should pass
   t.notThrows(() => {
-    verifyProof(proofWindow, anchoredCommitment, merkleRoot, 6)
+    verifyProofOfStorageContinuity(proofWindow, anchoredCommitment, merkleRoot, 6)
   })
   
   // Test verification failure cases
@@ -366,13 +366,13 @@ test('verification consensus compliance', (t) => {
   // Invalid proof window size
   const invalidWindow = { ...proofWindow, commitments: proofWindow.commitments.slice(0, 7) }
   t.throws(() => {
-    verifyProof(invalidWindow, anchoredCommitment, merkleRoot, 6)
+    verifyProofOfStorageContinuity(invalidWindow, anchoredCommitment, merkleRoot, 6)
   })
   
   // Invalid anchored commitment
   const invalidAnchor = Buffer.alloc(32, 0x99)
   t.throws(() => {
-    verifyProof(proofWindow, invalidAnchor, merkleRoot, 6)
+    verifyProofOfStorageContinuity(proofWindow, invalidAnchor, merkleRoot, 6)
   })
   
   cleanupTestDir(testDir)

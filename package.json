@@ -1,14 +1,14 @@
 {
-  "name": "@dignetwork/proof-of-space-continuity",
+  "name": "@dignetwork/proof-of-storage-continuity",
   "version": "0.1.0",
   "main": "index.js",
   "types": "index.d.ts",
   "repository": {
     "type": "git",
-    "url": "https://github.com/DIG-Network/proof-of-space-continuity"
+    "url": "https://github.com/DIG-Network/proof-of-storage-continuity"
   },
   "napi": {
-    "name": "proof-of-space-continuity",
+    "name": "proof-of-storage-continuity",
     "triples": {
       "additional": [
         "aarch64-apple-darwin",

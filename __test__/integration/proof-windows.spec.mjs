@@ -1,5 +1,5 @@
 import test from 'ava'
-import { HashChain, verifyProof } from '../../index.js'
+import { HashChain, verifyProofOfStorageContinuity } from '../../index.js'
 import { 
   TEST_PUBLIC_KEY, 
   TEST_BLOCK_HASH, 
@@ -176,7 +176,7 @@ test('proof window verification workflow', (t) => {
   
   // Basic verification should handle the structure correctly
   t.notThrows(() => {
-    verifyProof(proofWindow, anchoredCommitment, merkleRoot, 5)
+    verifyProofOfStorageContinuity(proofWindow, anchoredCommitment, merkleRoot, 5)
   })
   
   cleanupTestDir(testDir)

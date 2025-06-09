@@ -156,8 +156,8 @@ export declare function verifyChunkSelection(blockHash: Buffer, totalChunks: num
 export declare function createOwnershipCommitment(publicKey: Buffer, dataHash: Buffer): OwnershipCommitment
 /** Create anchored ownership commitment */
 export declare function createAnchoredOwnershipCommitment(ownershipCommitment: OwnershipCommitment, blockCommitment: BlockCommitment): AnchoredOwnershipCommitment
-/** Verify proof window */
-export declare function verifyProof(proofWindow: ProofWindow, anchoredCommitment: Buffer, merkleRoot: Buffer, totalChunks: number): boolean
+/** Verify proof window for storage continuity */
+export declare function verifyProofOfStorageContinuity(proofWindow: ProofWindow, anchoredCommitment: Buffer, merkleRoot: Buffer, totalChunks: number): boolean
 /** Main HashChain implementation for Proof of Storage Continuity */
 export declare class HashChain {
   /** Create new HashChain instance */

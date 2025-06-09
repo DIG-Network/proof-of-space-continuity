@@ -1,5 +1,5 @@
 import test from 'ava'
-import { HashChain, verifyProof } from '../../index.js'
+import { HashChain, verifyProofOfStorageContinuity } from '../../index.js'
 import { 
   TEST_PUBLIC_KEY, 
   TEST_BLOCK_HASH, 

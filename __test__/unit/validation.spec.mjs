@@ -5,7 +5,7 @@ import {
   verifyChunkSelection,
   createOwnershipCommitment,
   createAnchoredOwnershipCommitment,
-  verifyProof
+  verifyProofOfStorageContinuity
 } from '../../index.js'
 import { 
   TEST_PUBLIC_KEY, 
@@ -306,7 +306,7 @@ test('getProofWindow validates chain length', (t) => {
   cleanupTestDir(testDir)
 })
 
-test('verifyProof validates input parameters', (t) => {
+test('verifyProofOfStorageContinuity validates input parameters', (t) => {
   // Create valid test data
   const testDir = createTestDir('verify_proof_validation')
   const testData = createTestData(16384) // 4 chunks
@@ -325,22 +325,22 @@ test('verifyProof validates input parameters', (t) => {
   
   // Valid proof should work
   t.notThrows(() => {
-    verifyProof(proofWindow, validAnchoredCommitment, validMerkleRoot, 4)
+    verifyProofOfStorageContinuity(proofWindow, validAnchoredCommitment, validMerkleRoot, 4)
   })
   
   // Invalid anchored commitment length
   t.throws(() => {
-    verifyProof(proofWindow, Buffer.alloc(16), validMerkleRoot, 4)
+    verifyProofOfStorageContinuity(proofWindow, Buffer.alloc(16), validMerkleRoot, 4)
   })
   
   // Invalid merkle root length
   t.throws(() => {
-    verifyProof(proofWindow, validAnchoredCommitment, Buffer.alloc(16), 4)
+    verifyProofOfStorageContinuity(proofWindow, validAnchoredCommitment, Buffer.alloc(16), 4)
   })
   
   // Invalid total chunks
   t.throws(() => {
-    verifyProof(proofWindow, validAnchoredCommitment, validMerkleRoot, 0)
+    verifyProofOfStorageContinuity(proofWindow, validAnchoredCommitment, validMerkleRoot, 0)
   })
   
   cleanupTestDir(testDir)

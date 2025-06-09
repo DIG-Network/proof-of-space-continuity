@@ -1,6 +1,6 @@
 [package]
 edition = "2021"
-name = "proof-of-space-continuity"
+name = "proof-of-storage-continuity"
 version = "0.1.0"
 license = "MIT"
 authors = ["Your Name <your.email@example.com>"]
