@@ -1,6 +1,6 @@
 # HashChain Proof of Storage Continuity
 
-A high-performance HashChain Proof of Storage Continuity (PoSC) library for Node.js, built with Rust and NAPI bindings. This library enables cryptographic proof that data remains continuously accessible over time using blockchain entropy. This is intended to work as a L2 consensus system that is anchored to the blocks of an existing L1 to assist in the creation of temporal proofs that are typically impossible to ensure with POW or VDF algorithms.For DIG, Chia Blockchain is assumed to be the anchored L1 block chain.
+A high-performance HashChain Proof of Storage Continuity (PoSC) library for Node.js, built with Rust and NAPI bindings. This library enables cryptographic proof that data remains continuously accessible over time using blockchain entropy. This is intended to work as a L2 consensus system that is anchored to the blocks of an existing L1 to assist in the creation of temporal proofs that are typically impossible to ensure with POW or VDF algorithms. For DIG, Chia Blockchain is assumed to be the anchored L1 block chain.
 
 ## Overview
 
