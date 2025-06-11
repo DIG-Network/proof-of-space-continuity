@@ -22,7 +22,15 @@ rs_merkle = "1.4"  # Production-ready merkle tree implementation
 
 # Fast Checksums & File Operations
 crc = "3.0"        # Fast CRC32 checksums for file integrity
+crc32fast = "1.4"  # High-performance CRC32 implementation
 memmap2 = "0.9"    # Memory-mapped files (solves Windows file access issues)
+
+# Parallel Processing
+rayon = "1.7"      # Data parallelism for hierarchical processing
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0" # JSON serialization for statistics and results
 
 # Error Handling
 thiserror = "1.0"

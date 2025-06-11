@@ -310,9 +310,10 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`)
 }
 
-const { HashChain, selectChunksV1, verifyChunkSelection, createOwnershipCommitment, createAnchoredOwnershipCommitment, verifyProofOfStorageContinuity } = nativeBinding
+const { HashChain, HierarchicalChainManager, selectChunksV1, verifyChunkSelection, createOwnershipCommitment, createAnchoredOwnershipCommitment, verifyProofOfStorageContinuity } = nativeBinding
 
 module.exports.HashChain = HashChain
+module.exports.HierarchicalChainManager = HierarchicalChainManager
 module.exports.selectChunksV1 = selectChunksV1
 module.exports.verifyChunkSelection = verifyChunkSelection
 module.exports.createOwnershipCommitment = createOwnershipCommitment

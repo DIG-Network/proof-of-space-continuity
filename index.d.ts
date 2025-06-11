@@ -148,6 +148,124 @@ export interface HashChainInfo {
   /** Complete chain data as structured object */
   chainDataJson?: ChainData
 }
+/** Ultra-compact proof for audits (exactly 136 bytes) */
+export interface UltraCompactProof {
+  /** Chain hash (32 bytes) */
+  chainHash: Buffer
+  /** Chain length (8 bytes) */
+  chainLength: number
+  /** Global proof reference (32 bytes) */
+  globalProofReference: Buffer
+  /** Global block height (8 bytes) */
+  globalBlockHeight: number
+  /** Hierarchical position (32 bytes) */
+  hierarchicalPosition: Buffer
+  /** Total chains count (4 bytes) */
+  totalChainsCount: number
+  /** Proof timestamp (8 bytes) */
+  proofTimestamp: number
+  /** Proof nonce (12 bytes) */
+  proofNonce: Buffer
+}
+/** Format B: Compact Proof (1.6 KB - Standard verification) */
+export interface CompactProof {
+  /** Chain hash (32 bytes) */
+  chainHash: Buffer
+  /** Chain length (8 bytes) */
+  chainLength: number
+  /** Last 8 commitments (8 * 136 = 1088 bytes) */
+  proofWindow: Array<PhysicalAccessCommitment>
+  /** Group proof hash (32 bytes) */
+  groupProof: Buffer
+  /** Regional proof hash (32 bytes) */
+  regionalProof: Buffer
+  /** Global proof reference (32 bytes) */
+  globalProofReference: Buffer
+  /** Merkle path to group (up to 256 bytes) */
+  merklePath: Array<Buffer>
+  /** Proof metadata (64 bytes) */
+  metadata: ProofMetadata
+}
+/** Format C: Full Proof (16 KB - Complete verification) */
+export interface FullProof {
+  /** Chain hash (32 bytes) */
+  chainHash: Buffer
+  /** Complete chain data */
+  chainData: ChainData
+  /** All group proofs in region (10 * 32 = 320 bytes) */
+  groupProofs: Array<Buffer>
+  /** All regional proofs (10 * 32 = 320 bytes) */
+  regionalProofs: Array<Buffer>
+  /** Global hierarchical proof (32 bytes) */
+  globalProof: Buffer
+  /** Complete merkle paths for verification (up to 8 KB) */
+  merklePaths: Array<Array<Buffer>>
+  /** Chunk verification data (up to 4 KB) */
+  chunkVerification: ChunkVerificationData
+  /** Full metadata and statistics (up to 2 KB) */
+  fullMetadata: FullProofMetadata
+}
+/** Format D: Hierarchical Path Proof (200 bytes - Path validation) */
+export interface HierarchicalPathProof {
+  /** Chain ID (32 bytes) */
+  chainId: Buffer
+  /** Group ID hash (32 bytes) */
+  groupId: Buffer
+  /** Region ID hash (32 bytes) */
+  regionId: Buffer
+  /** Path to global root (64 bytes) */
+  hierarchicalPath: Buffer
+  /** Current position in hierarchy (8 bytes) */
+  position: HierarchicalPosition
+  /** Validation timestamp (8 bytes) */
+  timestamp: number
+  /** Path verification nonce (16 bytes) */
+  verificationNonce: Buffer
+}
+/** Proof metadata for compact proofs */
+export interface ProofMetadata {
+  /** Proof generation timestamp */
+  timestamp: number
+  /** Total chains in system */
+  totalChains: number
+  /** Algorithm version */
+  version: number
+  /** Proof type identifier */
+  proofType: string
+}
+/** Chunk verification data for full proofs */
+export interface ChunkVerificationData {
+  /** Selected chunk indices */
+  selectedChunks: Array<number>
+  /** Chunk hashes */
+  chunkHashes: Array<Buffer>
+  /** Chunk merkle proofs */
+  chunkProofs: Array<Buffer>
+  /** File integrity hash */
+  fileHash: Buffer
+}
+/** Full proof metadata with statistics */
+export interface FullProofMetadata {
+  /** Detailed system statistics */
+  systemStats: string
+  /** Performance metrics */
+  performanceMetrics: string
+  /** Verification instructions */
+  verificationGuide: string
+  /** Proof generation time */
+  generationTimeMs: number
+}
+/** Hierarchical position in the proof tree */
+export interface HierarchicalPosition {
+  /** Level in hierarchy (0-3) */
+  level: number
+  /** Position at this level */
+  position: number
+  /** Total items at this level */
+  totalAtLevel: number
+  /** Parent position */
+  parentPosition?: number
+}
 /** CONSENSUS CRITICAL: Standardized chunk selection algorithm V1 */
 export declare function selectChunksV1(blockHash: Buffer, totalChunks: number): ChunkSelectionResult
 /** Verify chunk selection matches network consensus algorithm */
@@ -158,7 +276,10 @@ export declare function createOwnershipCommitment(publicKey: Buffer, dataHash: B
 export declare function createAnchoredOwnershipCommitment(ownershipCommitment: OwnershipCommitment, blockCommitment: BlockCommitment): AnchoredOwnershipCommitment
 /** Verify proof window for storage continuity */
 export declare function verifyProofOfStorageContinuity(proofWindow: ProofWindow, anchoredCommitment: Buffer, merkleRoot: Buffer, totalChunks: number): boolean
-/** Main HashChain implementation for Proof of Storage Continuity */
+/**
+ * Main HashChain implementation for Proof of Storage Continuity
+ * This is a wrapper around IndividualHashChain for NAPI bindings
+ */
 export declare class HashChain {
   /** Create new HashChain instance */
   constructor(publicKey: Buffer, blockHeight: number, blockHash: Buffer)
@@ -188,4 +309,31 @@ export declare class HashChain {
   getDataFilePath(): string | null
   /** Get comprehensive information about the HashChain state */
   getChainInfo(): HashChainInfo
+}
+/** Hierarchical Chain Manager for 100,000+ chains */
+export declare class HierarchicalChainManager {
+  /** Create new hierarchical manager */
+  constructor(maxChains?: number | undefined | null)
+  /** Add a HashChain instance to the hierarchical system */
+  addChain(hashChain: HashChain, retentionPolicy?: string | undefined | null): string
+  /** Remove a chain from the hierarchical system */
+  removeChain(chainId: string, reason?: string | undefined | null, archiveData?: boolean | undefined | null): string
+  /** Process a new blockchain block */
+  processBlock(blockHash: Buffer, blockHeight: number): void
+  /** Get statistics about the hierarchical system */
+  getStatistics(): string
+  /** Generate Format A: Ultra-compact proof for audit (136 bytes - Phase 1 audits) */
+  generateUltraCompactProof(chainId: string, nonce: Buffer): UltraCompactProof
+  /** Generate Format B: Compact proof (1.6 KB - Standard verification) */
+  generateCompactProof(chainId: string, includeMerklePath?: boolean | undefined | null): CompactProof
+  /** Generate Format C: Full proof (16 KB - Complete verification) */
+  generateFullProof(chainId: string, includeChunkData?: boolean | undefined | null): FullProof
+  /** Generate Format D: Hierarchical path proof (200 bytes - Path validation) */
+  generateHierarchicalPathProof(chainId: string): HierarchicalPathProof
+  /** Get hierarchical level statistics */
+  getLevelStatistics(level: number): string
+  /** Verify proof format and size */
+  verifyProofFormat(proofType: string, proofData: Buffer): boolean
+  /** Legacy method for backward compatibility - Generate ultra-compact proof */
+  generateAuditProof(chainId: string, nonce: Buffer): UltraCompactProof
 }
