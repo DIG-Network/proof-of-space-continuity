@@ -37,8 +37,7 @@ impl Default for GlobalChainState {
 }
 
 /// Chain registry for managing active chains
-#[derive(Clone)]
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct ChainRegistry {
     /// Active chains by chain_id
     pub chains: HashMap<ChainId, LightweightHashChain>,
@@ -47,8 +46,6 @@ pub struct ChainRegistry {
     /// Chain metadata
     pub chain_metadata: HashMap<ChainId, ChainMetadata>,
 }
-
-
 
 /// Metadata for a chain
 #[derive(Clone)]
