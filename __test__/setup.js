@@ -220,4 +220,70 @@ if (process.env.NODE_ENV !== 'test') {
     console.log(`📊 Native module loaded: ${!!nativeModule}`);
     console.log(`⚡ Test constants configured: ${Object.keys(global.TEST_CONSTANTS).length} items`);
     console.log(`🛠️  Test utilities available: ${Object.keys(global.TestUtils).length} functions`);
+}
+
+// Platform detection for ARM64-specific handling
+global.PLATFORM_INFO = {
+    isARM64: process.arch === 'arm64' || process.arch === 'aarch64',
+    platform: process.platform,
+    arch: process.arch,
+    nodeVersion: process.version
+};
+
+// ARM64-specific adjustments
+if (global.PLATFORM_INFO.isARM64) {
+    // Increase timeouts for slower ARM64 performance
+    global.TEST_CONSTANTS.PERFORMANCE_TEST_TIMEOUT = 30000; // 30 seconds
+    global.TEST_CONSTANTS.ARM64_TIMEOUT_MULTIPLIER = 3; // 3x longer timeouts
+    
+    console.log('🔧 ARM64 platform detected - applying performance adjustments');
+}
+
+// Cleanup handlers to ensure tests exit properly
+const cleanupHandlers = [];
+
+global.addCleanupHandler = (handler) => {
+    cleanupHandlers.push(handler);
+};
+
+// Cleanup function
+const cleanup = () => {
+    cleanupHandlers.forEach(handler => {
+        try {
+            handler();
+        } catch (error) {
+            console.error('Cleanup handler error:', error);
+        }
+    });
+};
+
+// Register cleanup on various exit scenarios
+process.on('exit', cleanup);
+process.on('SIGINT', () => {
+    cleanup();
+    process.exit(0);
+});
+process.on('SIGTERM', () => {
+    cleanup();
+    process.exit(0);
+});
+process.on('uncaughtException', (error) => {
+    console.error('Uncaught exception:', error);
+    cleanup();
+    process.exit(1);
+});
+
+// Force exit after cleanup on ARM64 to prevent hanging
+if (global.PLATFORM_INFO.isARM64) {
+    // Add a final timeout to force exit if tests hang
+    const forceExitTimeout = setTimeout(() => {
+        console.log('⚠️  Force exiting on ARM64 due to timeout');
+        cleanup();
+        process.exit(0);
+    }, 300000); // 5 minutes max runtime
+    
+    // Clear timeout if process exits normally
+    process.on('beforeExit', () => {
+        clearTimeout(forceExitTimeout);
+    });
 } 

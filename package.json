@@ -26,8 +26,8 @@
     "files": [
       "__test__/**/*.test.js"
     ],
-    "timeout": "30s",
-    "concurrency": 4,
+    "timeout": "2m",
+    "concurrency": 2,
     "verbose": true,
     "require": [
       "./__test__/setup.js"

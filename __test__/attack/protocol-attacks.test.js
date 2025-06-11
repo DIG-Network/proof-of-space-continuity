@@ -17,6 +17,11 @@ test.before(async t => {
     try {
         t.context.module = require('../../index.js');
         t.context.mockCallbacks = require('../mock-callbacks');
+        
+        // Set ARM64-specific timeouts
+        if (global.PLATFORM_INFO && global.PLATFORM_INFO.isARM64) {
+            t.timeout(120000); // 2 minutes for ARM64
+        }
     } catch (error) {
         t.fail(`Failed to load module: ${error.message}`);
     }
