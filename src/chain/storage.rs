@@ -346,6 +346,20 @@ impl ChainStorage {
 
         Ok(header)
     }
+
+    /// Explicitly close memory-mapped file handle (Windows compatibility)
+    pub fn close_mmap(&mut self) {
+        if let Some(_mmap) = self.mmap.take() {
+            log::debug!("Explicitly closing memory-mapped file: {}", self.data_file_path);
+            // Mmap will be dropped here, releasing the file handle
+            // On Windows, this helps avoid "user-mapped section open" errors
+        }
+    }
+
+    /// Check if memory mapping is active
+    pub fn is_mmap_active(&self) -> bool {
+        self.mmap.is_some()
+    }
 }
 
 /// File statistics and metadata
@@ -367,9 +381,14 @@ pub struct FilePaths {
 
 impl Drop for ChainStorage {
     fn drop(&mut self) {
-        // Memory map will be automatically unmapped when dropped
+        // Explicitly close memory mapping for Windows compatibility
         if self.mmap.is_some() {
-            log::debug!("Unmapping file: {}", self.data_file_path);
+            log::debug!("Dropping ChainStorage, unmapping file: {}", self.data_file_path);
+            self.close_mmap();
+            
+            // Give Windows a moment to release the file handle
+            #[cfg(target_os = "windows")]
+            std::thread::sleep(std::time::Duration::from_millis(10));
         }
     }
 }

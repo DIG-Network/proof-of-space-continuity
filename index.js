@@ -310,12 +310,15 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`)
 }
 
-const { HashChain, HierarchicalChainManager, selectChunksV1, verifyChunkSelection, createOwnershipCommitment, createAnchoredOwnershipCommitment, verifyProofOfStorageContinuity } = nativeBinding
+const { ProofOfStorageProver, ProofOfStorageVerifier, HierarchicalNetworkManager, generateMultiSourceEntropy, createMemoryHardVdfProof, verifyMemoryHardVdfProof, selectChunksFromEntropy, verifyChunkSelection, createCommitmentHash, verifyCommitmentIntegrity } = nativeBinding
 
-module.exports.HashChain = HashChain
-module.exports.HierarchicalChainManager = HierarchicalChainManager
-module.exports.selectChunksV1 = selectChunksV1
+module.exports.ProofOfStorageProver = ProofOfStorageProver
+module.exports.ProofOfStorageVerifier = ProofOfStorageVerifier
+module.exports.HierarchicalNetworkManager = HierarchicalNetworkManager
+module.exports.generateMultiSourceEntropy = generateMultiSourceEntropy
+module.exports.createMemoryHardVdfProof = createMemoryHardVdfProof
+module.exports.verifyMemoryHardVdfProof = verifyMemoryHardVdfProof
+module.exports.selectChunksFromEntropy = selectChunksFromEntropy
 module.exports.verifyChunkSelection = verifyChunkSelection
-module.exports.createOwnershipCommitment = createOwnershipCommitment
-module.exports.createAnchoredOwnershipCommitment = createAnchoredOwnershipCommitment
-module.exports.verifyProofOfStorageContinuity = verifyProofOfStorageContinuity
+module.exports.createCommitmentHash = createCommitmentHash
+module.exports.verifyCommitmentIntegrity = verifyCommitmentIntegrity

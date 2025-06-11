@@ -16,6 +16,11 @@ pub fn compute_sha256(data: &[u8]) -> [u8; 32] {
     hasher.finalize().into()
 }
 
+/// Alias for compute_sha256 for new interface compatibility
+pub fn sha256(data: &[u8]) -> [u8; 32] {
+    compute_sha256(data)
+}
+
 /// Compute SHA256 from two byte slices (for Merkle tree operations)
 pub fn compute_sha256_from_slices(left: &[u8], right: &[u8]) -> [u8; 32] {
     let mut data = Vec::new();

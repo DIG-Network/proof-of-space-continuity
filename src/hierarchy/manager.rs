@@ -1,17 +1,15 @@
-use log::{debug, info, warn};
+
+use crate::core::errors::HashChainResult;
 use napi::bindgen_prelude::*;
 use std::collections::HashMap;
+use serde_json;
 
 use crate::core::{
-    errors::{HashChainError, HashChainResult},
+    
     types::*,
-    utils::{
-        compute_sha256, generate_chain_id, get_current_timestamp, log_performance_metrics,
-        validate_block_hash, validate_public_key, PerformanceTimer,
-    },
 };
 use crate::hierarchy::{
-    GroupManager, HierarchicalGlobalProof, HierarchicalProofResult, RegionManager,
+    GroupManager, RegionManager,
 };
 
 /// Global state for all chains in the system
@@ -140,7 +138,7 @@ impl HierarchicalGlobalChainManager {
         public_key: Buffer,
         _retention_policy: Option<String>,
         _metadata: Option<HashMap<String, String>>,
-    ) -> HashChainResult<HashMap<String, String>> {
+    ) -> HashChainResult<HashMap<String, serde_json::Value>> {
         // Create a basic chain ID
         let chain_id = public_key.iter().take(16).cloned().collect::<Vec<u8>>();
 
@@ -153,6 +151,9 @@ impl HierarchicalGlobalChainManager {
             chain_length: 0,
             initial_block_height: 0,
             initial_block_hash: Buffer::from([0u8; 32].to_vec()),
+            file_encoding: None,
+            availability_score: 1.0,
+            latency_score: 1.0,
         };
 
         self.chain_registry.insert(chain_id.clone(), chain);
@@ -164,9 +165,10 @@ impl HierarchicalGlobalChainManager {
             .assign_group_to_region(group_id.clone())?;
 
         let mut result = HashMap::new();
-        result.insert("chain_id".to_string(), hex::encode(&chain_id));
-        result.insert("group_id".to_string(), group_id);
-        result.insert("region_id".to_string(), region_id);
+        result.insert("success".to_string(), serde_json::Value::Bool(true));
+        result.insert("chain_id".to_string(), serde_json::Value::String(hex::encode(&chain_id)));
+        result.insert("group_id".to_string(), serde_json::Value::String(group_id));
+        result.insert("region_id".to_string(), serde_json::Value::String(region_id));
         Ok(result)
     }
 
@@ -175,18 +177,19 @@ impl HierarchicalGlobalChainManager {
         chain_id: Vec<u8>,
         reason: Option<String>,
         archive_data: bool,
-    ) -> HashChainResult<HashMap<String, String>> {
+    ) -> HashChainResult<HashMap<String, serde_json::Value>> {
         if self.chain_registry.remove(&chain_id).is_some() {
             self.active_chains = self.active_chains.saturating_sub(1);
             self.group_manager.remove_chain_from_group(&chain_id)?;
         }
 
         let mut result = HashMap::new();
-        result.insert("chain_id".to_string(), hex::encode(&chain_id));
-        result.insert("archived".to_string(), archive_data.to_string());
+        result.insert("success".to_string(), serde_json::Value::Bool(true));
+        result.insert("chain_id".to_string(), serde_json::Value::String(hex::encode(&chain_id)));
+        result.insert("archived".to_string(), serde_json::Value::Bool(archive_data));
         result.insert(
             "reason".to_string(),
-            reason.unwrap_or_else(|| "removed".to_string()),
+            serde_json::Value::String(reason.unwrap_or_else(|| "removed".to_string())),
         );
         Ok(result)
     }
@@ -203,6 +206,8 @@ impl HierarchicalGlobalChainManager {
     pub fn get_statistics(&self) -> HashMap<String, f64> {
         let mut stats = HashMap::new();
         stats.insert("active_chains".to_string(), self.active_chains as f64);
+        stats.insert("totalChains".to_string(), self.active_chains as f64);
+        stats.insert("total_chains".to_string(), self.active_chains as f64);
         stats.insert(
             "total_groups".to_string(),
             self.group_manager.groups.len() as f64,

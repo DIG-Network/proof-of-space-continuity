@@ -5,9 +5,8 @@ use crate::consensus::{
     commitments::calculate_commitment_hash_internal,
 };
 use crate::core::{
-    errors::{HashChainError, HashChainResult},
     types::*,
-    utils::{compute_sha256, validate_block_hash, validate_chunk_index},
+    utils::{validate_chunk_index},
 };
 
 /// Verify proof window for storage continuity

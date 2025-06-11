@@ -6,11 +6,11 @@ use crate::core::{
     errors::{HashChainError, HashChainResult},
     types::*,
     utils::{
-        compute_merkle_root, compute_sha256, get_current_timestamp, log_performance_metrics,
+        compute_merkle_root, compute_sha256, get_current_timestamp,
         PerformanceTimer,
     },
 };
-use crate::hierarchy::{GroupManager, RegionManager};
+
 
 /// Result of hierarchical proof computation
 #[derive(Clone)]

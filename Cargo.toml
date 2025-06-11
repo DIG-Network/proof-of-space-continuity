@@ -19,6 +19,7 @@ napi-derive = "2.12.2"
 sha2 = "0.10"
 hex = "0.4"
 rs_merkle = "1.4"  # Production-ready merkle tree implementation
+rand = "0.8"       # Random number generation for entropy
 
 # Fast Checksums & File Operations
 crc = "3.0"        # Fast CRC32 checksums for file integrity
