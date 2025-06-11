@@ -2,11 +2,7 @@ use napi::bindgen_prelude::*;
 
 use std::collections::HashMap;
 
-use crate::core::{
-    
-    types::*,
-    utils::compute_sha256,
-};
+use crate::core::{types::*, utils::compute_sha256};
 
 /// Network latency proof system to prevent outsourcing attacks
 /// Verifies that storage is geographically distributed and not centralized
@@ -23,6 +19,12 @@ pub struct PeerConnection {
     last_latency_ms: f64,
     latency_history: Vec<f64>,
     connection_established: bool,
+}
+
+impl Default for NetworkLatencyProver {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl NetworkLatencyProver {
@@ -53,7 +55,9 @@ impl NetworkLatencyProver {
     pub fn measure_peer_latency(&mut self, peer_id: &str) -> Result<PeerLatencyMeasurement> {
         // Clone the address to avoid borrowing conflicts
         let peer_address = {
-            let peer = self.peer_connections.get(peer_id)
+            let peer = self
+                .peer_connections
+                .get(peer_id)
                 .ok_or_else(|| Error::new(Status::GenericFailure, "Peer not found".to_string()))?;
             peer.address.clone()
         };
@@ -61,11 +65,13 @@ impl NetworkLatencyProver {
         // Simulate network latency measurement
         // In real implementation, this would ping the peer
         let latency_ms = self.simulate_network_ping(&peer_address)?;
-        
+
         // Now we can safely get mutable access to update the peer
-        let peer = self.peer_connections.get_mut(peer_id)
+        let peer = self
+            .peer_connections
+            .get_mut(peer_id)
             .ok_or_else(|| Error::new(Status::GenericFailure, "Peer not found".to_string()))?;
-        
+
         // Update peer history
         peer.last_latency_ms = latency_ms;
         peer.latency_history.push(latency_ms);
@@ -170,9 +176,10 @@ impl NetworkLatencyProver {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs_f64();
-        
+
         let measurement_age = current_time - proof.measurement_time;
-        if measurement_age > 300.0 { // 5 minutes
+        if measurement_age > 300.0 {
+            // 5 minutes
             return Ok(false); // Too old
         }
 
@@ -191,7 +198,7 @@ impl NetworkLatencyProver {
 
         // Generate latency between 5ms and 95ms based on address hash
         let base_latency = 5.0 + (hash_value % 90) as f64;
-        
+
         // Add some random variation (±10ms)
         let variation = (hash_value % 20) as f64 - 10.0;
         let final_latency = base_latency + variation;
@@ -200,7 +207,11 @@ impl NetworkLatencyProver {
     }
 
     /// Calculate latency variance
-    fn calculate_latency_variance(&self, measurements: &[PeerLatencyMeasurement], average: f64) -> f64 {
+    fn calculate_latency_variance(
+        &self,
+        measurements: &[PeerLatencyMeasurement],
+        average: f64,
+    ) -> f64 {
         if measurements.len() < 2 {
             return 0.0;
         }
@@ -229,7 +240,7 @@ impl NetworkLatencyProver {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs_f64();
-        
+
         proof_input.extend_from_slice(&timestamp.to_be_bytes());
         proof_input.extend_from_slice(b"geographic_distribution_proof");
 
@@ -238,15 +249,19 @@ impl NetworkLatencyProver {
 
     /// Get network latency statistics
     pub fn get_latency_stats(&self) -> LatencyStats {
-        let connected_peers = self.peer_connections.values()
+        let connected_peers = self
+            .peer_connections
+            .values()
             .filter(|p| p.connection_established)
             .count() as u32;
 
         let average_latency = if connected_peers > 0 {
-            self.peer_connections.values()
+            self.peer_connections
+                .values()
                 .filter(|p| p.connection_established)
                 .map(|p| p.last_latency_ms)
-                .sum::<f64>() / connected_peers as f64
+                .sum::<f64>()
+                / connected_peers as f64
         } else {
             0.0
         };
@@ -266,7 +281,8 @@ impl NetworkLatencyProver {
 
     /// List all peer IDs - uses the peer_id field
     pub fn list_peer_ids(&self) -> Vec<String> {
-        self.peer_connections.values()
+        self.peer_connections
+            .values()
             .map(|peer| peer.peer_id.clone())
             .collect()
     }
@@ -283,7 +299,8 @@ impl NetworkLatencyProver {
 
     /// Get peer connection status by ID - uses the peer_id field
     pub fn is_peer_connected(&self, peer_id: &str) -> bool {
-        self.peer_connections.get(peer_id)
+        self.peer_connections
+            .get(peer_id)
             .map(|peer| peer.connection_established)
             .unwrap_or(false)
     }
@@ -329,7 +346,7 @@ pub fn create_network_proof(peer_addresses: Vec<String>) -> Result<NetworkLatenc
 
 /// Detect potential outsourcing based on latency patterns
 pub fn detect_outsourcing_patterns(
-    historical_proofs: &[NetworkLatencyProof]
+    historical_proofs: &[NetworkLatencyProof],
 ) -> Result<OutsourcingRisk> {
     if historical_proofs.is_empty() {
         return Ok(OutsourcingRisk::Unknown);
@@ -341,7 +358,7 @@ pub fn detect_outsourcing_patterns(
     for proof in historical_proofs {
         // Check for suspiciously consistent latencies
         let latency_variance = proof.latency_variance;
-        
+
         if latency_variance < 1.0 {
             // Very consistent latencies might indicate centralized infrastructure
             suspicious_patterns += 1;
@@ -378,4 +395,4 @@ pub enum OutsourcingRisk {
     Medium,
     High,
     Unknown,
-} 
+}

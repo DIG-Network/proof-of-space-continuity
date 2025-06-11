@@ -4,10 +4,7 @@ use crate::consensus::{
     chunk_selection::verify_chunk_selection_internal,
     commitments::calculate_commitment_hash_internal,
 };
-use crate::core::{
-    types::*,
-    utils::{validate_chunk_index},
-};
+use crate::core::{types::*, utils::validate_chunk_index};
 
 /// Verify proof window for storage continuity
 pub fn verify_proof_of_storage_continuity_internal(

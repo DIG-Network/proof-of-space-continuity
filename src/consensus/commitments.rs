@@ -1,18 +1,16 @@
 use napi::bindgen_prelude::*;
 
-
 use crate::core::{
-    
+    availability::{AvailabilityChallenger, AvailabilityProver},
+    file_encoding::FileEncoder,
+    memory_hard_vdf::MemoryHardVDF,
     types::*,
     utils::{compute_sha256, validate_block_hash, validate_public_key},
-    memory_hard_vdf::MemoryHardVDF,
-    file_encoding::FileEncoder,
-    availability::{AvailabilityChallenger, AvailabilityProver},
 };
 
 use crate::consensus::{
     chunk_selection::select_chunks_deterministic_v2,
-    network_latency::{NetworkLatencyProver, create_network_proof},
+    network_latency::{create_network_proof, NetworkLatencyProver},
 };
 
 /// Create basic ownership commitment
@@ -244,18 +242,12 @@ impl EnhancedCommitmentGenerator {
         }
 
         // 3. Generate memory-hard VDF proof
-        let vdf_input = self.create_vdf_input(
-            &previous_commitment,
-            &entropy,
-            &chunk_hashes,
-        )?;
+        let vdf_input = self.create_vdf_input(&previous_commitment, &entropy, &chunk_hashes)?;
         let vdf_proof = self.memory_vdf.compute(&vdf_input, 25.0)?; // 25 seconds target
 
         // 4. Handle availability challenges
-        let availability_responses = self.process_availability_challenges(
-            &entropy.blockchain_entropy,
-            block_height as u64,
-        )?;
+        let availability_responses =
+            self.process_availability_challenges(&entropy.blockchain_entropy, block_height as u64)?;
 
         // 5. Generate network latency proof
         let network_latency_proof = create_network_proof(peer_addresses)?;
@@ -265,22 +257,22 @@ impl EnhancedCommitmentGenerator {
         commitment_input.extend_from_slice(&block_height.to_be_bytes());
         commitment_input.extend_from_slice(&previous_commitment);
         commitment_input.extend_from_slice(&entropy.combined_hash);
-        
+
         // Add chunk selection proof
         commitment_input.extend_from_slice(&chunk_selection.verification_hash);
         commitment_input.extend_from_slice(&chunk_selection.unpredictability_proof);
-        
+
         // Add chunk hashes
         for chunk_hash in &chunk_hashes {
             commitment_input.extend_from_slice(chunk_hash);
         }
-        
+
         // Add VDF proof
         commitment_input.extend_from_slice(&vdf_proof.output_state);
-        
+
         // Add network proof
         commitment_input.extend_from_slice(&network_latency_proof.average_latency_ms.to_be_bytes());
-        
+
         commitment_input.extend_from_slice(b"enhanced_physical_access_v2");
 
         let commitment_hash = compute_sha256(&commitment_input);
@@ -308,7 +300,8 @@ impl EnhancedCommitmentGenerator {
         // 1. Verify chunk selection is valid
         let chunk_selection_valid = self.verify_chunk_selection(
             &commitment.entropy,
-            commitment.selected_chunks.len() as f64 * (commitment.selected_chunks.len() as f64 / CHUNKS_PER_BLOCK as f64),
+            commitment.selected_chunks.len() as f64
+                * (commitment.selected_chunks.len() as f64 / CHUNKS_PER_BLOCK as f64),
             &commitment.selected_chunks,
         )?;
 
@@ -323,13 +316,16 @@ impl EnhancedCommitmentGenerator {
         }
 
         // 3. Verify availability responses
-        let availability_valid = self.verify_availability_responses(&commitment.availability_responses)?;
+        let availability_valid =
+            self.verify_availability_responses(&commitment.availability_responses)?;
         if !availability_valid {
             return Ok(false);
         }
 
         // 4. Verify network latency proof
-        let network_valid = self.network_prover.verify_latency_proof(&commitment.network_latency_proof)?;
+        let network_valid = self
+            .network_prover
+            .verify_latency_proof(&commitment.network_latency_proof)?;
         if !network_valid {
             return Ok(false);
         }
@@ -380,7 +376,7 @@ impl EnhancedCommitmentGenerator {
         // Simulate reading chunk data
         // In real implementation, this would read from the actual file
         let mut chunk_data = vec![0u8; CHUNK_SIZE_BYTES as usize];
-        
+
         // Fill with deterministic but unique data based on chunk index
         for (i, byte) in chunk_data.iter_mut().enumerate() {
             *byte = ((chunk_index + i as u32) % 256) as u8;
@@ -401,7 +397,12 @@ impl EnhancedCommitmentGenerator {
     }
 
     /// Issue availability challenge using the challenger - uses availability_challenger field
-    pub fn issue_availability_challenge(&mut self, chain_id: Buffer, total_chunks: u32, block_height: u64) -> Result<Option<AvailabilityChallenge>> {
+    pub fn issue_availability_challenge(
+        &mut self,
+        chain_id: Buffer,
+        total_chunks: u32,
+        block_height: u64,
+    ) -> Result<Option<AvailabilityChallenge>> {
         // Use the availability_challenger field
         self.availability_challenger.create_challenge(
             chain_id,
@@ -412,7 +413,10 @@ impl EnhancedCommitmentGenerator {
     }
 
     /// Respond to availability challenge using the prover - uses availability_prover field  
-    pub fn respond_to_availability_challenge(&mut self, challenge: &AvailabilityChallenge) -> Result<AvailabilityResponse> {
+    pub fn respond_to_availability_challenge(
+        &mut self,
+        challenge: &AvailabilityChallenge,
+    ) -> Result<AvailabilityResponse> {
         // Use the availability_prover field
         self.availability_prover.respond_to_challenge(challenge)
     }
@@ -422,16 +426,20 @@ impl EnhancedCommitmentGenerator {
         let stats = self.availability_challenger.get_challenge_stats();
         format!(
             "{{\"active_challenges\": {}, \"challenge_probability\": {}, \"timeout_ms\": {}}}",
-            stats.active_challenges,
-            stats.challenge_probability,
-            stats.response_timeout_ms
+            stats.active_challenges, stats.challenge_probability, stats.response_timeout_ms
         )
     }
 
     /// Register chain for availability proving - uses availability_prover field
-    pub fn register_chain_for_availability(&mut self, chain_id: String, file_path: String, total_chunks: u32) {
+    pub fn register_chain_for_availability(
+        &mut self,
+        chain_id: String,
+        file_path: String,
+        total_chunks: u32,
+    ) {
         // Use the availability_prover field
-        self.availability_prover.register_chain(chain_id, file_path, total_chunks);
+        self.availability_prover
+            .register_chain(chain_id, file_path, total_chunks);
     }
 
     /// Clean up expired challenges - uses availability_challenger field
@@ -467,13 +475,16 @@ impl EnhancedCommitmentGenerator {
     }
 
     /// Verify commitment hash is correct
-    fn verify_commitment_hash(&self, commitment: &EnhancedPhysicalAccessCommitment) -> Result<bool> {
+    fn verify_commitment_hash(
+        &self,
+        commitment: &EnhancedPhysicalAccessCommitment,
+    ) -> Result<bool> {
         // Reconstruct the commitment hash and compare
         let mut commitment_input = Vec::new();
         commitment_input.extend_from_slice(&commitment.block_height.to_be_bytes());
         commitment_input.extend_from_slice(&commitment.previous_commitment);
         commitment_input.extend_from_slice(&commitment.entropy.combined_hash);
-        
+
         // This is a simplified verification - would include all components
         commitment_input.extend_from_slice(b"enhanced_physical_access_v2");
 
@@ -565,18 +576,23 @@ mod tests {
     fn test_enhanced_ownership_commitment() {
         let prover_key = Buffer::from([42u8; 32].to_vec());
         let generator = EnhancedCommitmentGenerator::new(prover_key.clone()).unwrap();
-        
+
         let original_hash = Buffer::from([1u8; 32].to_vec());
         let encoded_hash = Buffer::from([2u8; 32].to_vec());
 
-        let commitment = generator.generate_enhanced_ownership_commitment(
-            original_hash.clone(),
-            encoded_hash.clone(),
-            prover_key.clone(),
-        ).unwrap();
+        let commitment = generator
+            .generate_enhanced_ownership_commitment(
+                original_hash.clone(),
+                encoded_hash.clone(),
+                prover_key.clone(),
+            )
+            .unwrap();
 
         assert_eq!(commitment.public_key.as_ref(), prover_key.as_ref());
-        assert_eq!(commitment.original_data_hash.as_ref(), original_hash.as_ref());
+        assert_eq!(
+            commitment.original_data_hash.as_ref(),
+            original_hash.as_ref()
+        );
         assert_eq!(commitment.encoded_data_hash.as_ref(), encoded_hash.as_ref());
         assert_eq!(commitment.commitment_hash.len(), 32);
     }
@@ -585,7 +601,7 @@ mod tests {
     fn test_enhanced_physical_access_commitment_generation() {
         let prover_key = Buffer::from([42u8; 32].to_vec());
         let mut generator = EnhancedCommitmentGenerator::new(prover_key).unwrap();
-        
+
         let entropy = MultiSourceEntropy {
             blockchain_entropy: Buffer::from([1u8; 32].to_vec()),
             beacon_entropy: Some(Buffer::from([2u8; 32].to_vec())),
@@ -595,22 +611,24 @@ mod tests {
         };
 
         let previous_commitment = Buffer::from([5u8; 32].to_vec());
-        let peer_addresses = vec![
-            "192.168.1.1".to_string(),
-            "10.0.0.1".to_string(),
-        ];
+        let peer_addresses = vec!["192.168.1.1".to_string(), "10.0.0.1".to_string()];
 
-        let commitment = generator.generate_enhanced_physical_access_commitment(
-            100.0,
-            previous_commitment.clone(),
-            entropy.clone(),
-            "/fake/path".to_string(),
-            100000.0,
-            peer_addresses,
-        ).unwrap();
+        let commitment = generator
+            .generate_enhanced_physical_access_commitment(
+                100.0,
+                previous_commitment.clone(),
+                entropy.clone(),
+                "/fake/path".to_string(),
+                100000.0,
+                peer_addresses,
+            )
+            .unwrap();
 
         assert_eq!(commitment.block_height, 100.0);
-        assert_eq!(commitment.previous_commitment.as_ref(), previous_commitment.as_ref());
+        assert_eq!(
+            commitment.previous_commitment.as_ref(),
+            previous_commitment.as_ref()
+        );
         assert_eq!(commitment.selected_chunks.len(), CHUNKS_PER_BLOCK as usize);
         assert_eq!(commitment.chunk_hashes.len(), CHUNKS_PER_BLOCK as usize);
         assert_eq!(commitment.commitment_hash.len(), 32);
@@ -620,7 +638,7 @@ mod tests {
     fn test_enhanced_commitment_verification() {
         let prover_key = Buffer::from([42u8; 32].to_vec());
         let generator = EnhancedCommitmentGenerator::new(prover_key.clone()).unwrap();
-        
+
         // Create a minimal commitment for testing
         let entropy = MultiSourceEntropy {
             blockchain_entropy: Buffer::from([1u8; 32].to_vec()),
@@ -632,12 +650,8 @@ mod tests {
 
         // This test would need a fully formed commitment to verify
         // For now, just test that the verification function exists and runs
-        let is_valid = generator.verify_chunk_selection(
-            &entropy,
-            100000.0,
-            &[1, 2, 3, 4],
-        );
-        
+        let is_valid = generator.verify_chunk_selection(&entropy, 100000.0, &[1, 2, 3, 4]);
+
         assert!(is_valid.is_ok());
     }
-} 
+}

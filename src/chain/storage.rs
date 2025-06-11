@@ -350,7 +350,10 @@ impl ChainStorage {
     /// Explicitly close memory-mapped file handle (Windows compatibility)
     pub fn close_mmap(&mut self) {
         if let Some(_mmap) = self.mmap.take() {
-            log::debug!("Explicitly closing memory-mapped file: {}", self.data_file_path);
+            log::debug!(
+                "Explicitly closing memory-mapped file: {}",
+                self.data_file_path
+            );
             // Mmap will be dropped here, releasing the file handle
             // On Windows, this helps avoid "user-mapped section open" errors
         }
@@ -383,9 +386,12 @@ impl Drop for ChainStorage {
     fn drop(&mut self) {
         // Explicitly close memory mapping for Windows compatibility
         if self.mmap.is_some() {
-            log::debug!("Dropping ChainStorage, unmapping file: {}", self.data_file_path);
+            log::debug!(
+                "Dropping ChainStorage, unmapping file: {}",
+                self.data_file_path
+            );
             self.close_mmap();
-            
+
             // Give Windows a moment to release the file handle
             #[cfg(target_os = "windows")]
             std::thread::sleep(std::time::Duration::from_millis(10));

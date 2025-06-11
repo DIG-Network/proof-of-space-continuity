@@ -5,12 +5,8 @@ use std::collections::HashMap;
 use crate::core::{
     errors::{HashChainError, HashChainResult},
     types::*,
-    utils::{
-        compute_merkle_root, compute_sha256, get_current_timestamp,
-        PerformanceTimer,
-    },
+    utils::{compute_merkle_root, compute_sha256, get_current_timestamp, PerformanceTimer},
 };
-
 
 /// Result of hierarchical proof computation
 #[derive(Clone)]
@@ -128,7 +124,7 @@ impl HierarchicalGlobalProof {
         stats.insert("total_time_ms".to_string(), total_time_ms as f64);
 
         // Estimate sequential time (rough calculation)
-        let sequential_estimate = all_chain_commitments.len() as u32 * 1; // 1ms per chain
+        let sequential_estimate = all_chain_commitments.len() as u32; // 1ms per chain
         stats.insert(
             "sequential_estimate_ms".to_string(),
             sequential_estimate as f64,
@@ -165,7 +161,7 @@ impl HierarchicalGlobalProof {
         for (chain_id, commitment) in chain_commitments {
             let group_id = format!("group_{:06}", current_group_index);
 
-            let group_chains = groups.entry(group_id).or_insert_with(Vec::new);
+            let group_chains = groups.entry(group_id).or_default();
             group_chains.push((chain_id.clone(), commitment.clone()));
             current_group_size += 1;
 
@@ -261,7 +257,7 @@ impl HierarchicalGlobalProof {
         for (group_id, proof) in group_proofs {
             let region_id = format!("region_{:03}", current_region_index);
 
-            let region_groups = regions.entry(region_id).or_insert_with(Vec::new);
+            let region_groups = regions.entry(region_id).or_default();
             region_groups.push((group_id.clone(), proof.clone()));
             current_region_size += 1;
 

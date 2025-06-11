@@ -1,16 +1,10 @@
-
 use crate::core::errors::HashChainResult;
 use napi::bindgen_prelude::*;
-use std::collections::HashMap;
 use serde_json;
+use std::collections::HashMap;
 
-use crate::core::{
-    
-    types::*,
-};
-use crate::hierarchy::{
-    GroupManager, RegionManager,
-};
+use crate::core::types::*;
+use crate::hierarchy::{GroupManager, RegionManager};
 
 /// Global state for all chains in the system
 #[derive(Clone)]
@@ -44,6 +38,7 @@ impl Default for GlobalChainState {
 
 /// Chain registry for managing active chains
 #[derive(Clone)]
+#[derive(Default)]
 pub struct ChainRegistry {
     /// Active chains by chain_id
     pub chains: HashMap<ChainId, LightweightHashChain>,
@@ -53,15 +48,7 @@ pub struct ChainRegistry {
     pub chain_metadata: HashMap<ChainId, ChainMetadata>,
 }
 
-impl Default for ChainRegistry {
-    fn default() -> Self {
-        Self {
-            chains: HashMap::new(),
-            chain_commitments: HashMap::new(),
-            chain_metadata: HashMap::new(),
-        }
-    }
-}
+
 
 /// Metadata for a chain
 #[derive(Clone)]
@@ -166,9 +153,15 @@ impl HierarchicalGlobalChainManager {
 
         let mut result = HashMap::new();
         result.insert("success".to_string(), serde_json::Value::Bool(true));
-        result.insert("chain_id".to_string(), serde_json::Value::String(hex::encode(&chain_id)));
+        result.insert(
+            "chain_id".to_string(),
+            serde_json::Value::String(hex::encode(&chain_id)),
+        );
         result.insert("group_id".to_string(), serde_json::Value::String(group_id));
-        result.insert("region_id".to_string(), serde_json::Value::String(region_id));
+        result.insert(
+            "region_id".to_string(),
+            serde_json::Value::String(region_id),
+        );
         Ok(result)
     }
 
@@ -185,8 +178,14 @@ impl HierarchicalGlobalChainManager {
 
         let mut result = HashMap::new();
         result.insert("success".to_string(), serde_json::Value::Bool(true));
-        result.insert("chain_id".to_string(), serde_json::Value::String(hex::encode(&chain_id)));
-        result.insert("archived".to_string(), serde_json::Value::Bool(archive_data));
+        result.insert(
+            "chain_id".to_string(),
+            serde_json::Value::String(hex::encode(&chain_id)),
+        );
+        result.insert(
+            "archived".to_string(),
+            serde_json::Value::Bool(archive_data),
+        );
         result.insert(
             "reason".to_string(),
             serde_json::Value::String(reason.unwrap_or_else(|| "removed".to_string())),

@@ -1,10 +1,10 @@
-use napi::bindgen_prelude::*;
 use crate::chain::storage::{ChainStorage, FileStats};
 use crate::core::{
     errors::{HashChainError, HashChainResult},
     types::*,
     utils::{compute_sha256, generate_chain_id, PerformanceTimer},
 };
+use napi::bindgen_prelude::*;
 
 /// Production-ready HashChain implementation
 pub struct IndividualHashChain {

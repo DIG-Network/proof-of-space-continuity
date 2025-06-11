@@ -219,7 +219,7 @@ impl Region {
         // Region is considered for rebalancing if it's less than 20% full
         // or more than 90% full (to allow for growth)
         let usage_ratio = self.group_ids.len() as f32 / self.max_groups as f32;
-        usage_ratio < 0.2 || usage_ratio > 0.9
+        !(0.2..=0.9).contains(&usage_ratio)
     }
 
     /// Get region metadata for monitoring
@@ -407,7 +407,7 @@ impl RegionManager {
             .count();
         stats.insert("non_empty_regions".to_string(), non_empty_regions as f64);
 
-        let avg_groups_per_region = if self.regions.len() > 0 {
+        let avg_groups_per_region = if !self.regions.is_empty() {
             self.group_to_region.len() as f64 / self.regions.len() as f64
         } else {
             0.0

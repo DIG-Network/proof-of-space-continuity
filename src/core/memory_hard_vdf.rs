@@ -1,11 +1,7 @@
 use napi::bindgen_prelude::*;
 use std::time::Instant;
 
-use crate::core::{
-    
-    types::*,
-    utils::compute_sha256,
-};
+use crate::core::{types::*, utils::compute_sha256};
 
 /// Memory-hard VDF implementation for ASIC resistance
 /// Uses 256MB memory buffer to resist hardware acceleration
@@ -63,9 +59,9 @@ impl MemoryHardVDF {
         // Perform memory-hard iterations
         for iteration in 0..target_iterations {
             // Memory-dependent computation
-            let (new_state, read_addr, write_addr, memory_hash) = 
+            let (new_state, read_addr, write_addr, memory_hash) =
                 self.memory_hard_iteration(&state, iteration)?;
-            
+
             state = new_state;
 
             // Sample access pattern every 10,000 iterations for verification
@@ -95,20 +91,19 @@ impl MemoryHardVDF {
     fn initialize_memory(&mut self, input_state: &[u8]) -> Result<()> {
         // Fill memory with deterministic but complex pattern based on input
         let mut seed = input_state.to_vec();
-        
+
         for chunk_idx in 0..(self.memory_size / 32) {
             let start_offset = chunk_idx * 32;
             let end_offset = std::cmp::min(start_offset + 32, self.memory_size);
-            
+
             // Generate deterministic content for this chunk
             seed.extend_from_slice(&chunk_idx.to_be_bytes());
             let chunk_hash = compute_sha256(&seed);
-            
+
             // Copy hash to memory buffer
             let copy_len = end_offset - start_offset;
-            self.memory_buffer[start_offset..end_offset]
-                .copy_from_slice(&chunk_hash[..copy_len]);
-            
+            self.memory_buffer[start_offset..end_offset].copy_from_slice(&chunk_hash[..copy_len]);
+
             // Update seed for next iteration
             seed = chunk_hash.to_vec();
         }
@@ -125,35 +120,56 @@ impl MemoryHardVDF {
         // Calculate read address from current state
         let read_seed = compute_sha256(&[state, &iteration.to_be_bytes()].concat());
         let read_addr = u64::from_be_bytes([
-            read_seed[0], read_seed[1], read_seed[2], read_seed[3],
-            read_seed[4], read_seed[5], read_seed[6], read_seed[7],
-        ]) as usize % (self.memory_size - 1024); // Ensure we can read 1KB
+            read_seed[0],
+            read_seed[1],
+            read_seed[2],
+            read_seed[3],
+            read_seed[4],
+            read_seed[5],
+            read_seed[6],
+            read_seed[7],
+        ]) as usize
+            % (self.memory_size - 1024); // Ensure we can read 1KB
 
         // Read 1KB from memory at calculated address
         let memory_chunk = &self.memory_buffer[read_addr..read_addr + 1024];
         let memory_hash = compute_sha256(memory_chunk);
 
         // Compute new state mixing current state with memory content
-        let new_state = compute_sha256(&[
-            state,
-            &memory_hash,
-            &iteration.to_be_bytes(),
-            b"memory_hard_vdf"
-        ].concat());
+        let new_state = compute_sha256(
+            &[
+                state,
+                &memory_hash,
+                &iteration.to_be_bytes(),
+                b"memory_hard_vdf",
+            ]
+            .concat(),
+        );
 
         // Calculate write address from new state
         let write_input = [&new_state[..], b"write"].concat();
         let write_seed = compute_sha256(&write_input);
         let write_addr = u64::from_be_bytes([
-            write_seed[0], write_seed[1], write_seed[2], write_seed[3],
-            write_seed[4], write_seed[5], write_seed[6], write_seed[7],
-        ]) as usize % (self.memory_size - 32); // Ensure we can write 32 bytes
+            write_seed[0],
+            write_seed[1],
+            write_seed[2],
+            write_seed[3],
+            write_seed[4],
+            write_seed[5],
+            write_seed[6],
+            write_seed[7],
+        ]) as usize
+            % (self.memory_size - 32); // Ensure we can write 32 bytes
 
         // Write new state to memory at calculated address
-        self.memory_buffer[write_addr..write_addr + 32]
-            .copy_from_slice(&new_state);
+        self.memory_buffer[write_addr..write_addr + 32].copy_from_slice(&new_state);
 
-        Ok((new_state.to_vec(), read_addr as u64, write_addr as u64, memory_hash))
+        Ok((
+            new_state.to_vec(),
+            read_addr as u64,
+            write_addr as u64,
+            memory_hash,
+        ))
     }
 
     /// Verify a memory-hard VDF proof
@@ -176,8 +192,9 @@ impl MemoryHardVDF {
         let expected_time_min = proof.iterations as f64 / 500_000.0 * 1000.0; // Min time (fast hardware)
         let expected_time_max = proof.iterations as f64 / 200_000.0 * 1000.0; // Max time (slow hardware)
 
-        if proof.computation_time_ms < expected_time_min || 
-           proof.computation_time_ms > expected_time_max {
+        if proof.computation_time_ms < expected_time_min
+            || proof.computation_time_ms > expected_time_max
+        {
             return Ok(false);
         }
 
@@ -226,13 +243,13 @@ pub fn create_vdf_entropy(
     // Combine all entropy sources
     let mut combined = Vec::new();
     combined.extend_from_slice(&blockchain_entropy);
-    
+
     if let Some(ref beacon) = beacon_entropy {
         combined.extend_from_slice(beacon);
     } else {
         combined.extend_from_slice(&[0u8; 32]); // Deterministic fallback
     }
-    
+
     combined.extend_from_slice(&local_entropy);
     combined.extend_from_slice(&timestamp.to_be_bytes());
 
@@ -269,9 +286,9 @@ mod tests {
     fn test_memory_hard_vdf_basic() {
         let mut vdf = MemoryHardVDF::new_standard().unwrap();
         let input_state = [1u8; 32];
-        
+
         let proof = vdf.compute(&input_state, 0.1).unwrap(); // 100ms target
-        
+
         assert_eq!(proof.input_state.len(), 32);
         assert_eq!(proof.output_state.len(), 32);
         assert!(proof.iterations >= 1000);
@@ -284,10 +301,10 @@ mod tests {
         let mut vdf1 = MemoryHardVDF::new_standard().unwrap();
         let mut vdf2 = MemoryHardVDF::new_standard().unwrap();
         let input_state = [2u8; 32];
-        
+
         let proof1 = vdf1.compute(&input_state, 0.05).unwrap();
         let proof2 = vdf2.compute(&input_state, 0.05).unwrap();
-        
+
         // Should be deterministic for same input and iterations
         assert_eq!(proof1.output_state.as_ref(), proof2.output_state.as_ref());
         assert_eq!(proof1.iterations, proof2.iterations);
@@ -297,9 +314,9 @@ mod tests {
     fn test_memory_hard_vdf_verification() {
         let mut vdf = MemoryHardVDF::new_standard().unwrap();
         let input_state = [3u8; 32];
-        
+
         let proof = vdf.compute(&input_state, 0.1).unwrap();
-        
+
         let is_valid = MemoryHardVDF::verify_proof(&proof).unwrap();
         assert!(is_valid);
     }
@@ -311,12 +328,9 @@ mod tests {
         let local_entropy = Buffer::from([3u8; 32].to_vec());
         let timestamp = 1234567890.0;
 
-        let entropy = create_vdf_entropy(
-            blockchain_entropy,
-            beacon_entropy,
-            local_entropy,
-            timestamp,
-        ).unwrap();
+        let entropy =
+            create_vdf_entropy(blockchain_entropy, beacon_entropy, local_entropy, timestamp)
+                .unwrap();
 
         assert_eq!(entropy.blockchain_entropy.len(), 32);
         assert!(entropy.beacon_entropy.is_some());
@@ -328,11 +342,11 @@ mod tests {
     #[test]
     fn test_block_vdf_functions() {
         let input_state = Buffer::from([4u8; 32].to_vec());
-        
+
         let proof = compute_block_vdf(input_state, 0.05).unwrap();
         let is_valid = verify_block_vdf(&proof).unwrap();
-        
+
         assert!(is_valid);
         assert!(proof.iterations >= 1000);
     }
-} 
+}

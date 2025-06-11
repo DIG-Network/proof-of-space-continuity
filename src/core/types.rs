@@ -603,84 +603,84 @@ pub struct UltraCompactProof {
 impl UltraCompactProof {
     pub fn serialize(&self) -> Result<Buffer> {
         let mut data = Vec::new();
-        
+
         // Chain hash (32 bytes)
         data.extend_from_slice(self.chain_hash.as_ref());
-        
+
         // Chain length (8 bytes)
         data.extend_from_slice(&self.chain_length.to_le_bytes());
-        
+
         // Global proof reference (32 bytes)
         data.extend_from_slice(self.global_proof_reference.as_ref());
-        
+
         // Global block height (8 bytes)
         data.extend_from_slice(&self.global_block_height.to_le_bytes());
-        
+
         // Hierarchical position (32 bytes)
         data.extend_from_slice(self.hierarchical_position.as_ref());
-        
+
         // Total chains count (4 bytes)
         data.extend_from_slice(&self.total_chains_count.to_le_bytes());
-        
+
         // Proof timestamp (8 bytes)
         data.extend_from_slice(&self.proof_timestamp.to_le_bytes());
-        
+
         // Proof nonce (12 bytes)
         data.extend_from_slice(self.proof_nonce.as_ref());
-        
+
         // Verify exactly 136 bytes
         if data.len() != 136 {
             return Err(Error::new(
                 Status::GenericFailure,
-                format!("Invalid proof size: {} bytes (expected 136)", data.len())
+                format!("Invalid proof size: {} bytes (expected 136)", data.len()),
             ));
         }
-        
+
         Ok(Buffer::from(data))
     }
-    
+
     pub fn deserialize(data: Buffer) -> Result<Self> {
         if data.len() != 136 {
             return Err(Error::new(
                 Status::GenericFailure,
-                format!("Invalid proof size: {} bytes (expected 136)", data.len())
+                format!("Invalid proof size: {} bytes (expected 136)", data.len()),
             ));
         }
-        
+
         let data = data.as_ref();
         let mut offset = 0;
-        
+
         // Chain hash (32 bytes)
-        let chain_hash = Buffer::from(data[offset..offset+32].to_vec());
+        let chain_hash = Buffer::from(data[offset..offset + 32].to_vec());
         offset += 32;
-        
+
         // Chain length (8 bytes)
-        let chain_length = f64::from_le_bytes(data[offset..offset+8].try_into().unwrap());
+        let chain_length = f64::from_le_bytes(data[offset..offset + 8].try_into().unwrap());
         offset += 8;
-        
+
         // Global proof reference (32 bytes)
-        let global_proof_reference = Buffer::from(data[offset..offset+32].to_vec());
+        let global_proof_reference = Buffer::from(data[offset..offset + 32].to_vec());
         offset += 32;
-        
+
         // Global block height (8 bytes)
-        let global_block_height = f64::from_le_bytes(data[offset..offset+8].try_into().unwrap());
+        let global_block_height = f64::from_le_bytes(data[offset..offset + 8].try_into().unwrap());
         offset += 8;
-        
+
         // Hierarchical position (32 bytes)
-        let hierarchical_position = Buffer::from(data[offset..offset+32].to_vec());
+        let hierarchical_position = Buffer::from(data[offset..offset + 32].to_vec());
         offset += 32;
-        
+
         // Total chains count (4 bytes)
-        let total_chains_count = u32::from_le_bytes(data[offset..offset+4].try_into().unwrap());
+        let total_chains_count = u32::from_le_bytes(data[offset..offset + 4].try_into().unwrap());
         offset += 4;
-        
+
         // Proof timestamp (8 bytes)
-        let proof_timestamp = f64::from_le_bytes(data[offset..offset+8].try_into().unwrap());
+        let proof_timestamp = f64::from_le_bytes(data[offset..offset + 8].try_into().unwrap());
         offset += 8;
-        
+
         // Proof nonce (12 bytes)
-        let proof_nonce = Buffer::from(data[offset..offset+12].to_vec());
-        
+        let proof_nonce = Buffer::from(data[offset..offset + 12].to_vec());
+
         Ok(Self {
             chain_hash,
             chain_length,

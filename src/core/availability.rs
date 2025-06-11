@@ -1,18 +1,20 @@
 use napi::bindgen_prelude::*;
-use std::time::{SystemTime, UNIX_EPOCH};
 use std::collections::HashMap;
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::core::{
-    
-    types::*,
-    utils::compute_sha256,
-};
+use crate::core::{types::*, utils::compute_sha256};
 
 /// Availability challenge system to ensure data is served, not just stored
 pub struct AvailabilityChallenger {
     challenge_probability: f64,
     response_timeout_ms: u32,
     active_challenges: HashMap<String, AvailabilityChallenge>,
+}
+
+impl Default for AvailabilityChallenger {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl AvailabilityChallenger {
@@ -42,7 +44,8 @@ impl AvailabilityChallenger {
         let chunk_index = self.select_challenge_chunk(&chain_id, total_chunks, block_height)?;
 
         // Generate challenge nonce
-        let challenge_nonce = self.generate_challenge_nonce(&chain_id, chunk_index, block_height)?;
+        let challenge_nonce =
+            self.generate_challenge_nonce(&chain_id, chunk_index, block_height)?;
 
         // Get current timestamp
         let current_time = SystemTime::now()
@@ -62,7 +65,8 @@ impl AvailabilityChallenger {
 
         // Store active challenge
         let challenge_id = self.compute_challenge_id(&challenge)?;
-        self.active_challenges.insert(challenge_id, challenge.clone());
+        self.active_challenges
+            .insert(challenge_id, challenge.clone());
 
         Ok(Some(challenge))
     }
@@ -74,7 +78,9 @@ impl AvailabilityChallenger {
         response: AvailabilityResponse,
     ) -> Result<AvailabilityResult> {
         // Find the challenge
-        let challenge = self.active_challenges.get(&challenge_id)
+        let challenge = self
+            .active_challenges
+            .get(&challenge_id)
             .ok_or_else(|| Error::new(Status::GenericFailure, "Challenge not found".to_string()))?
             .clone();
 
@@ -115,13 +121,19 @@ impl AvailabilityChallenger {
 
         let challenge_hash = compute_sha256(&challenge_seed);
         let challenge_value = u64::from_be_bytes([
-            challenge_hash[0], challenge_hash[1], challenge_hash[2], challenge_hash[3],
-            challenge_hash[4], challenge_hash[5], challenge_hash[6], challenge_hash[7],
+            challenge_hash[0],
+            challenge_hash[1],
+            challenge_hash[2],
+            challenge_hash[3],
+            challenge_hash[4],
+            challenge_hash[5],
+            challenge_hash[6],
+            challenge_hash[7],
         ]);
 
         // Convert probability to threshold
         let threshold = (self.challenge_probability * u64::MAX as f64) as u64;
-        
+
         Ok(challenge_value < threshold)
     }
 
@@ -138,9 +150,8 @@ impl AvailabilityChallenger {
         chunk_seed.extend_from_slice(b"challenge_chunk_selection");
 
         let chunk_hash = compute_sha256(&chunk_seed);
-        let chunk_value = u32::from_be_bytes([
-            chunk_hash[0], chunk_hash[1], chunk_hash[2], chunk_hash[3],
-        ]);
+        let chunk_value =
+            u32::from_be_bytes([chunk_hash[0], chunk_hash[1], chunk_hash[2], chunk_hash[3]]);
 
         Ok(chunk_value % total_chunks)
     }
@@ -193,12 +204,16 @@ impl AvailabilityChallenger {
 
         // Verify proof contains challenge nonce (simplified verification)
         let expected_proof = self.compute_expected_proof(challenge, &response.chunk_data)?;
-        
+
         Ok(response.authenticity_proof.as_ref() == expected_proof.as_slice())
     }
 
     /// Compute expected authenticity proof
-    fn compute_expected_proof(&self, challenge: &AvailabilityChallenge, chunk_data: &[u8]) -> Result<Vec<u8>> {
+    fn compute_expected_proof(
+        &self,
+        challenge: &AvailabilityChallenge,
+        chunk_data: &[u8],
+    ) -> Result<Vec<u8>> {
         let mut proof_input = Vec::new();
         proof_input.extend_from_slice(&challenge.challenge_nonce);
         proof_input.extend_from_slice(chunk_data);
@@ -279,6 +294,12 @@ struct ChainAvailabilityData {
     chunk_cache: HashMap<u32, Vec<u8>>, // Cache recently accessed chunks
 }
 
+impl Default for AvailabilityProver {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AvailabilityProver {
     /// Create new availability prover
     pub fn new() -> Self {
@@ -298,9 +319,12 @@ impl AvailabilityProver {
     }
 
     /// Respond to availability challenge
-    pub fn respond_to_challenge(&mut self, challenge: &AvailabilityChallenge) -> Result<AvailabilityResponse> {
+    pub fn respond_to_challenge(
+        &mut self,
+        challenge: &AvailabilityChallenge,
+    ) -> Result<AvailabilityResponse> {
         let chain_id = hex::encode(&challenge.chain_id);
-        
+
         // Read chunk data - separate the operations to avoid borrowing conflicts
         let chunk_data = self.read_chunk_for_chain(&chain_id, challenge.chunk_index)?;
 
@@ -336,11 +360,17 @@ impl AvailabilityProver {
 
     /// Get total chunks for a chain - uses total_chunks field
     pub fn get_total_chunks(&self, chain_id: &str) -> Option<u32> {
-        self.chain_data.get(chain_id).map(|chain_data| chain_data.total_chunks)
+        self.chain_data
+            .get(chain_id)
+            .map(|chain_data| chain_data.total_chunks)
     }
 
     /// Validate challenge bounds - uses total_chunks field
-    pub fn validate_challenge_bounds(&self, chain_id: &str, challenge: &AvailabilityChallenge) -> bool {
+    pub fn validate_challenge_bounds(
+        &self,
+        chain_id: &str,
+        challenge: &AvailabilityChallenge,
+    ) -> bool {
         if let Some(chain_data) = self.chain_data.get(chain_id) {
             // Use total_chunks field to validate challenge is within bounds
             challenge.chunk_index < chain_data.total_chunks
@@ -351,8 +381,9 @@ impl AvailabilityProver {
 
     /// Get storage statistics for chain - uses total_chunks field
     pub fn get_chain_storage_stats(&self, chain_id: &str) -> Option<ChainStorageStats> {
-        self.chain_data.get(chain_id).map(|chain_data| {
-            ChainStorageStats {
+        self.chain_data
+            .get(chain_id)
+            .map(|chain_data| ChainStorageStats {
                 total_chunks: chain_data.total_chunks,
                 cached_chunks: chain_data.chunk_cache.len() as u32,
                 file_path: chain_data.file_path.clone(),
@@ -361,17 +392,16 @@ impl AvailabilityProver {
                 } else {
                     0.0
                 },
-            }
-        })
+            })
     }
 
     /// Validate chunk range request - uses total_chunks field
     pub fn validate_chunk_range(&self, chain_id: &str, start_chunk: u32, end_chunk: u32) -> bool {
         if let Some(chain_data) = self.chain_data.get(chain_id) {
             // Use total_chunks field to validate range is within bounds
-            start_chunk <= end_chunk && 
-            end_chunk < chain_data.total_chunks &&
-            start_chunk < chain_data.total_chunks
+            start_chunk <= end_chunk
+                && end_chunk < chain_data.total_chunks
+                && start_chunk < chain_data.total_chunks
         } else {
             false
         }
@@ -381,34 +411,43 @@ impl AvailabilityProver {
     fn read_chunk_for_chain(&mut self, chain_id: &str, chunk_index: u32) -> Result<Vec<u8>> {
         // Check if chain exists first
         if !self.chain_data.contains_key(chain_id) {
-            return Err(Error::new(Status::GenericFailure, "Chain not found".to_string()));
+            return Err(Error::new(
+                Status::GenericFailure,
+                "Chain not found".to_string(),
+            ));
         }
 
         // Check cache first (avoid mutable borrow)
-        if let Some(cached_chunk) = self.chain_data.get(chain_id)
-            .and_then(|chain_data| chain_data.chunk_cache.get(&chunk_index)) {
+        if let Some(cached_chunk) = self
+            .chain_data
+            .get(chain_id)
+            .and_then(|chain_data| chain_data.chunk_cache.get(&chunk_index))
+        {
             return Ok(cached_chunk.clone());
         }
 
         // Get file path for reading
-        let file_path = self.chain_data.get(chain_id)
+        let file_path = self
+            .chain_data
+            .get(chain_id)
             .ok_or_else(|| Error::new(Status::GenericFailure, "Chain not found".to_string()))?
-            .file_path.clone();
+            .file_path
+            .clone();
 
         // Read chunk data from file
         let chunk_data = self.read_chunk_from_file(&file_path, chunk_index)?;
 
         // Now update cache with mutable borrow
         if let Some(chain_data) = self.chain_data.get_mut(chain_id) {
-            chain_data.chunk_cache.insert(chunk_index, chunk_data.clone());
+            chain_data
+                .chunk_cache
+                .insert(chunk_index, chunk_data.clone());
 
             // Limit cache size
             if chain_data.chunk_cache.len() > 100 {
                 // Remove oldest entries (simplified LRU)
-                let keys_to_remove: Vec<_> = chain_data.chunk_cache.keys()
-                    .take(20)
-                    .cloned()
-                    .collect();
+                let keys_to_remove: Vec<_> =
+                    chain_data.chunk_cache.keys().take(20).cloned().collect();
                 for key in keys_to_remove {
                     chain_data.chunk_cache.remove(&key);
                 }
@@ -423,15 +462,20 @@ impl AvailabilityProver {
         use std::fs::File;
         use std::io::{Read, Seek, SeekFrom};
 
-        let mut file = File::open(file_path)
-            .map_err(|e| Error::new(Status::GenericFailure, format!("Failed to open file: {}", e)))?;
+        let mut file = File::open(file_path).map_err(|e| {
+            Error::new(
+                Status::GenericFailure,
+                format!("Failed to open file: {}", e),
+            )
+        })?;
 
         let chunk_offset = chunk_index as u64 * CHUNK_SIZE_BYTES as u64;
         file.seek(SeekFrom::Start(chunk_offset))
             .map_err(|e| Error::new(Status::GenericFailure, format!("Failed to seek: {}", e)))?;
 
         let mut chunk_data = vec![0u8; CHUNK_SIZE_BYTES as usize];
-        let bytes_read = file.read(&mut chunk_data)
+        let bytes_read = file
+            .read(&mut chunk_data)
             .map_err(|e| Error::new(Status::GenericFailure, format!("Failed to read: {}", e)))?;
 
         // Handle partial last chunk
@@ -443,7 +487,11 @@ impl AvailabilityProver {
     }
 
     /// Generate authenticity proof for chunk
-    fn generate_authenticity_proof(&self, challenge: &AvailabilityChallenge, chunk_data: &[u8]) -> Result<Vec<u8>> {
+    fn generate_authenticity_proof(
+        &self,
+        challenge: &AvailabilityChallenge,
+        chunk_data: &[u8],
+    ) -> Result<Vec<u8>> {
         let mut proof_input = Vec::new();
         proof_input.extend_from_slice(&challenge.challenge_nonce);
         proof_input.extend_from_slice(chunk_data);
@@ -475,7 +523,9 @@ mod tests {
         let chain_id = Buffer::from([1u8; 32].to_vec());
         let challenger_id = Buffer::from([2u8; 32].to_vec());
 
-        let challenge = challenger.create_challenge(chain_id, 1000, challenger_id, 100).unwrap();
+        let challenge = challenger
+            .create_challenge(chain_id, 1000, challenger_id, 100)
+            .unwrap();
 
         // Challenge creation is probabilistic, so it might be None
         if let Some(challenge) = challenge {
@@ -490,13 +540,17 @@ mod tests {
     fn test_challenge_deterministic() {
         let mut challenger1 = AvailabilityChallenger::new();
         let mut challenger2 = AvailabilityChallenger::new();
-        
+
         let chain_id = Buffer::from([3u8; 32].to_vec());
         let challenger_id = Buffer::from([4u8; 32].to_vec());
         let block_height = 200;
 
-        let challenge1 = challenger1.create_challenge(chain_id.clone(), 1000, challenger_id.clone(), block_height).unwrap();
-        let challenge2 = challenger2.create_challenge(chain_id, 1000, challenger_id, block_height).unwrap();
+        let challenge1 = challenger1
+            .create_challenge(chain_id.clone(), 1000, challenger_id.clone(), block_height)
+            .unwrap();
+        let challenge2 = challenger2
+            .create_challenge(chain_id, 1000, challenger_id, block_height)
+            .unwrap();
 
         // Should be deterministic for same inputs
         match (challenge1, challenge2) {
@@ -539,7 +593,10 @@ mod tests {
         let stats = challenger.get_challenge_stats();
 
         assert_eq!(stats.active_challenges, 0);
-        assert_eq!(stats.challenge_probability, AVAILABILITY_CHALLENGE_PROBABILITY);
+        assert_eq!(
+            stats.challenge_probability,
+            AVAILABILITY_CHALLENGE_PROBABILITY
+        );
         assert_eq!(stats.response_timeout_ms, AVAILABILITY_RESPONSE_TIME_MS);
     }
-} 
+}

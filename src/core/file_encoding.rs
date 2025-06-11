@@ -1,12 +1,8 @@
 use napi::bindgen_prelude::*;
-use std::io::{Read, Seek, SeekFrom};
 use std::fs::File;
+use std::io::{Read, Seek, SeekFrom};
 
-use crate::core::{
-    
-    types::*,
-    utils::compute_sha256,
-};
+use crate::core::{types::*, utils::compute_sha256};
 
 /// File encoding system to prevent deduplication attacks
 /// Each prover stores a unique version of the file by XORing with their public key
@@ -41,7 +37,7 @@ impl FileEncoder {
         }
 
         let mut encoded = Vec::with_capacity(chunk_data.len());
-        
+
         // Generate chunk-specific encoding key
         let encoding_key = self.generate_chunk_key(chunk_index)?;
 
@@ -79,7 +75,11 @@ impl FileEncoder {
     }
 
     /// Create file encoding information
-    pub fn create_encoding_info(&self, original_hash: Buffer, encoded_hash: Buffer) -> FileEncodingInfo {
+    pub fn create_encoding_info(
+        &self,
+        original_hash: Buffer,
+        encoded_hash: Buffer,
+    ) -> FileEncodingInfo {
         // Generate encoding parameters
         let mut params = Vec::new();
         params.extend_from_slice(&self.encoding_version.to_be_bytes());
@@ -117,18 +117,27 @@ pub fn encode_file(
     prover_key: Buffer,
 ) -> Result<FileEncodingInfo> {
     let encoder = FileEncoder::new(prover_key)?;
-    
-    let mut input_file = File::open(input_file_path)
-        .map_err(|e| Error::new(Status::GenericFailure, format!("Failed to open input file: {}", e)))?;
-    
-    let mut output_file = std::fs::File::create(output_file_path)
-        .map_err(|e| Error::new(Status::GenericFailure, format!("Failed to create output file: {}", e)))?;
+
+    let mut input_file = File::open(input_file_path).map_err(|e| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to open input file: {}", e),
+        )
+    })?;
+
+    let mut output_file = std::fs::File::create(output_file_path).map_err(|e| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to create output file: {}", e),
+        )
+    })?;
 
     // Calculate original file hash
     let original_hash = calculate_file_hash(&mut input_file)?;
-    
+
     // Reset file position
-    input_file.seek(SeekFrom::Start(0))
+    input_file
+        .seek(SeekFrom::Start(0))
         .map_err(|e| Error::new(Status::GenericFailure, format!("Failed to seek: {}", e)))?;
 
     let mut chunk_index = 0u32;
@@ -137,8 +146,12 @@ pub fn encode_file(
     // Process file in chunks
     loop {
         let mut chunk_buffer = vec![0u8; CHUNK_SIZE_BYTES as usize];
-        let bytes_read = input_file.read(&mut chunk_buffer)
-            .map_err(|e| Error::new(Status::GenericFailure, format!("Failed to read chunk: {}", e)))?;
+        let bytes_read = input_file.read(&mut chunk_buffer).map_err(|e| {
+            Error::new(
+                Status::GenericFailure,
+                format!("Failed to read chunk: {}", e),
+            )
+        })?;
 
         if bytes_read == 0 {
             break; // End of file
@@ -159,8 +172,12 @@ pub fn encode_file(
     }
 
     // Write encoded content to output file
-    std::io::Write::write_all(&mut output_file, &encoded_content)
-        .map_err(|e| Error::new(Status::GenericFailure, format!("Failed to write output: {}", e)))?;
+    std::io::Write::write_all(&mut output_file, &encoded_content).map_err(|e| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to write output: {}", e),
+        )
+    })?;
 
     // Calculate encoded file hash
     let encoded_hash = Buffer::from(compute_sha256(&encoded_content).to_vec());
@@ -175,18 +192,27 @@ pub fn decode_file(
     prover_key: Buffer,
 ) -> Result<FileEncodingInfo> {
     let encoder = FileEncoder::new(prover_key)?;
-    
-    let mut input_file = File::open(input_file_path)
-        .map_err(|e| Error::new(Status::GenericFailure, format!("Failed to open input file: {}", e)))?;
-    
-    let mut output_file = std::fs::File::create(output_file_path)
-        .map_err(|e| Error::new(Status::GenericFailure, format!("Failed to create output file: {}", e)))?;
+
+    let mut input_file = File::open(input_file_path).map_err(|e| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to open input file: {}", e),
+        )
+    })?;
+
+    let mut output_file = std::fs::File::create(output_file_path).map_err(|e| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to create output file: {}", e),
+        )
+    })?;
 
     // Calculate encoded file hash
     let encoded_hash = calculate_file_hash(&mut input_file)?;
-    
+
     // Reset file position
-    input_file.seek(SeekFrom::Start(0))
+    input_file
+        .seek(SeekFrom::Start(0))
         .map_err(|e| Error::new(Status::GenericFailure, format!("Failed to seek: {}", e)))?;
 
     let mut chunk_index = 0u32;
@@ -195,8 +221,12 @@ pub fn decode_file(
     // Process file in chunks
     loop {
         let mut chunk_buffer = vec![0u8; CHUNK_SIZE_BYTES as usize];
-        let bytes_read = input_file.read(&mut chunk_buffer)
-            .map_err(|e| Error::new(Status::GenericFailure, format!("Failed to read chunk: {}", e)))?;
+        let bytes_read = input_file.read(&mut chunk_buffer).map_err(|e| {
+            Error::new(
+                Status::GenericFailure,
+                format!("Failed to read chunk: {}", e),
+            )
+        })?;
 
         if bytes_read == 0 {
             break; // End of file
@@ -217,8 +247,12 @@ pub fn decode_file(
     }
 
     // Write decoded content to output file
-    std::io::Write::write_all(&mut output_file, &decoded_content)
-        .map_err(|e| Error::new(Status::GenericFailure, format!("Failed to write output: {}", e)))?;
+    std::io::Write::write_all(&mut output_file, &decoded_content).map_err(|e| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to write output: {}", e),
+        )
+    })?;
 
     // Calculate original file hash
     let original_hash = Buffer::from(compute_sha256(&decoded_content).to_vec());
@@ -229,9 +263,13 @@ pub fn decode_file(
 /// Calculate hash of entire file
 fn calculate_file_hash(file: &mut File) -> Result<Buffer> {
     let mut content = Vec::new();
-    file.read_to_end(&mut content)
-        .map_err(|e| Error::new(Status::GenericFailure, format!("Failed to read file: {}", e)))?;
-    
+    file.read_to_end(&mut content).map_err(|e| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to read file: {}", e),
+        )
+    })?;
+
     Ok(Buffer::from(compute_sha256(&content).to_vec()))
 }
 
@@ -241,18 +279,22 @@ pub fn verify_file_encoding(
     encoding_info: &FileEncodingInfo,
 ) -> Result<bool> {
     let encoder = FileEncoder::new(encoding_info.prover_key.clone())?;
-    
+
     // Verify encoder recognizes this encoding
     if !encoder.verify_encoding(encoding_info)? {
         return Ok(false);
     }
 
     // Calculate actual encoded file hash
-    let mut file = File::open(encoded_file_path)
-        .map_err(|e| Error::new(Status::GenericFailure, format!("Failed to open file: {}", e)))?;
-    
+    let mut file = File::open(encoded_file_path).map_err(|e| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to open file: {}", e),
+        )
+    })?;
+
     let actual_hash = calculate_file_hash(&mut file)?;
-    
+
     // Compare with expected hash
     Ok(actual_hash.as_ref() == encoding_info.encoded_hash.as_ref())
 }
@@ -264,27 +306,27 @@ pub fn generate_local_entropy() -> Buffer {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     let mut hasher = DefaultHasher::new();
-    
+
     // Use current time as entropy source
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_nanos();
-    
+
     timestamp.hash(&mut hasher);
-    
+
     // Add process-specific entropy
     std::process::id().hash(&mut hasher);
-    
+
     // Create 32-byte entropy from hasher
     let hash_value = hasher.finish();
     let mut entropy = Vec::new();
-    
+
     // Expand 8-byte hash to 32 bytes
     for i in 0..4 {
         entropy.extend_from_slice(&(hash_value.wrapping_add(i)).to_be_bytes());
     }
-    
+
     Buffer::from(entropy)
 }
 
@@ -297,14 +339,14 @@ mod tests {
     fn test_chunk_encoding_decoding() {
         let prover_key = Buffer::from([42u8; 32].to_vec());
         let encoder = FileEncoder::new(prover_key).unwrap();
-        
+
         let original_data = vec![1u8, 2u8, 3u8, 4u8];
         let mut chunk = original_data.clone();
         chunk.resize(CHUNK_SIZE_BYTES as usize, 0); // Pad to chunk size
-        
+
         let encoded = encoder.encode_chunk(&chunk, 0).unwrap();
         let decoded = encoder.decode_chunk(&encoded, 0).unwrap();
-        
+
         assert_eq!(chunk, decoded);
         assert_ne!(chunk, encoded); // Should be different after encoding
     }
@@ -313,12 +355,12 @@ mod tests {
     fn test_chunk_encoding_deterministic() {
         let prover_key = Buffer::from([42u8; 32].to_vec());
         let encoder = FileEncoder::new(prover_key).unwrap();
-        
+
         let mut chunk = vec![5u8; CHUNK_SIZE_BYTES as usize];
-        
+
         let encoded1 = encoder.encode_chunk(&chunk, 1).unwrap();
         let encoded2 = encoder.encode_chunk(&chunk, 1).unwrap();
-        
+
         assert_eq!(encoded1, encoded2); // Should be deterministic
     }
 
@@ -326,15 +368,15 @@ mod tests {
     fn test_different_provers_different_encoding() {
         let prover_key1 = Buffer::from([1u8; 32].to_vec());
         let prover_key2 = Buffer::from([2u8; 32].to_vec());
-        
+
         let encoder1 = FileEncoder::new(prover_key1).unwrap();
         let encoder2 = FileEncoder::new(prover_key2).unwrap();
-        
+
         let mut chunk = vec![10u8; CHUNK_SIZE_BYTES as usize];
-        
+
         let encoded1 = encoder1.encode_chunk(&chunk, 0).unwrap();
         let encoded2 = encoder2.encode_chunk(&chunk, 0).unwrap();
-        
+
         assert_ne!(encoded1, encoded2); // Different provers should produce different encodings
     }
 
@@ -342,12 +384,12 @@ mod tests {
     fn test_encoding_info_creation() {
         let prover_key = Buffer::from([42u8; 32].to_vec());
         let encoder = FileEncoder::new(prover_key.clone()).unwrap();
-        
+
         let original_hash = Buffer::from([1u8; 32].to_vec());
         let encoded_hash = Buffer::from([2u8; 32].to_vec());
-        
+
         let info = encoder.create_encoding_info(original_hash.clone(), encoded_hash.clone());
-        
+
         assert_eq!(info.prover_key.as_ref(), prover_key.as_ref());
         assert_eq!(info.original_hash.as_ref(), original_hash.as_ref());
         assert_eq!(info.encoded_hash.as_ref(), encoded_hash.as_ref());
@@ -358,10 +400,10 @@ mod tests {
     fn test_local_entropy_generation() {
         let entropy1 = generate_local_entropy();
         let entropy2 = generate_local_entropy();
-        
+
         assert_eq!(entropy1.len(), 32);
         assert_eq!(entropy2.len(), 32);
         // Should be different (with very high probability)
         assert_ne!(entropy1.as_ref(), entropy2.as_ref());
     }
-} 
+}

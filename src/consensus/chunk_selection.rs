@@ -1,6 +1,6 @@
 use napi::bindgen_prelude::*;
-use std::collections::HashSet;
 use rayon::prelude::*;
+use std::collections::HashSet;
 
 use crate::core::{
     types::*,
@@ -54,10 +54,22 @@ pub fn select_chunks_deterministic_v2(
             // Extract 16-byte seed for enhanced randomness
             let seed_bytes = &seed_hash[..CHUNK_SELECTION_SEED_SIZE];
             let seed = u128::from_be_bytes([
-                seed_bytes[0], seed_bytes[1], seed_bytes[2], seed_bytes[3],
-                seed_bytes[4], seed_bytes[5], seed_bytes[6], seed_bytes[7],
-                seed_bytes[8], seed_bytes[9], seed_bytes[10], seed_bytes[11],
-                seed_bytes[12], seed_bytes[13], seed_bytes[14], seed_bytes[15],
+                seed_bytes[0],
+                seed_bytes[1],
+                seed_bytes[2],
+                seed_bytes[3],
+                seed_bytes[4],
+                seed_bytes[5],
+                seed_bytes[6],
+                seed_bytes[7],
+                seed_bytes[8],
+                seed_bytes[9],
+                seed_bytes[10],
+                seed_bytes[11],
+                seed_bytes[12],
+                seed_bytes[13],
+                seed_bytes[14],
+                seed_bytes[15],
             ]);
 
             // Calculate chunk index using secure modulo operation
@@ -76,11 +88,14 @@ pub fn select_chunks_deterministic_v2(
         // Enhanced fallback for unique chunk selection
         if attempts >= CHUNK_SELECTION_MAX_ATTEMPTS {
             // Use deterministic but different approach for fallback
-            let fallback_hash = compute_sha256(&[
-                &combined_entropy[..],
-                &chunk_slot.to_be_bytes(),
-                b"fallback"
-            ].concat());
+            let fallback_hash = compute_sha256(
+                &[
+                    &combined_entropy[..],
+                    &chunk_slot.to_be_bytes(),
+                    b"fallback",
+                ]
+                .concat(),
+            );
 
             for offset in 0..total_chunks_u64 as u32 {
                 let fallback_seed = u32::from_be_bytes([
@@ -153,7 +168,7 @@ fn create_combined_entropy(entropy: &MultiSourceEntropy) -> Result<Vec<u8>> {
 /// Create enhanced verification hash for consensus validation
 fn create_verification_hash_v2(
     entropy: &MultiSourceEntropy,
-    selected_indices: &[u32]
+    selected_indices: &[u32],
 ) -> Result<[u8; 32]> {
     let mut verification_input = Vec::new();
 
@@ -179,17 +194,17 @@ fn create_verification_hash_v2(
 /// Create unpredictability proof to resist pre-computation attacks
 fn create_unpredictability_proof(
     entropy: &MultiSourceEntropy,
-    selected_indices: &[u32]
+    selected_indices: &[u32],
 ) -> Result<[u8; 32]> {
     let mut proof_input = Vec::new();
 
     // Use entropy sources in specific order
     proof_input.extend_from_slice(&entropy.blockchain_entropy);
-    
+
     if let Some(ref beacon_entropy) = entropy.beacon_entropy {
         proof_input.extend_from_slice(beacon_entropy);
     }
-    
+
     proof_input.extend_from_slice(&entropy.local_entropy);
 
     // Add indices in original selection order (preserves timing info)
@@ -198,7 +213,11 @@ fn create_unpredictability_proof(
     }
 
     // Add multiple entropy source indicator
-    proof_input.push(if entropy.beacon_entropy.is_some() { 0xFF } else { 0x00 });
+    proof_input.push(if entropy.beacon_entropy.is_some() {
+        0xFF
+    } else {
+        0x00
+    });
 
     Ok(compute_sha256(&proof_input))
 }
@@ -237,7 +256,7 @@ pub fn select_chunks_deterministic(
         blockchain_entropy: block_hash.clone(),
         beacon_entropy: None,
         local_entropy: Buffer::from([0u8; 32].to_vec()), // Deterministic for compatibility
-        timestamp: 0.0, // Deterministic for compatibility
+        timestamp: 0.0,                                  // Deterministic for compatibility
         combined_hash: compute_sha256(&block_hash).to_vec().into(),
     };
 
@@ -285,9 +304,7 @@ pub fn select_chunks_parallel(
     // Use rayon for parallel processing
     let results: Vec<Result<EnhancedChunkSelectionResult>> = entropy_list
         .into_par_iter()
-        .map(|(entropy, total_chunks)| {
-            select_chunks_deterministic_v2(entropy, total_chunks)
-        })
+        .map(|(entropy, total_chunks)| select_chunks_deterministic_v2(entropy, total_chunks))
         .collect();
 
     // Collect results and propagate any errors

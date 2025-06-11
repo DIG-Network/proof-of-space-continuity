@@ -219,7 +219,7 @@ impl ChainGroup {
         // Group is considered for rebalancing if it's less than 10% full
         // or more than 95% full (to allow for growth)
         let usage_ratio = self.chain_ids.len() as f32 / self.max_chains as f32;
-        usage_ratio < 0.1 || usage_ratio > 0.95
+        !(0.1..=0.95).contains(&usage_ratio)
     }
 
     /// Get group metadata for monitoring
@@ -400,7 +400,7 @@ impl GroupManager {
         let non_empty_groups = self.groups.values().filter(|g| g.chain_count() > 0).count();
         stats.insert("non_empty_groups".to_string(), non_empty_groups as f64);
 
-        let avg_chains_per_group = if self.groups.len() > 0 {
+        let avg_chains_per_group = if !self.groups.is_empty() {
             self.chain_to_group.len() as f64 / self.groups.len() as f64
         } else {
             0.0
