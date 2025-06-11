@@ -1,20 +1,10 @@
 # Proof of Storage Continuity
 
-<<<<<<< HEAD
 A production-ready blockchain-agnostic Proof of Storage Continuity system for Node.js, built with Rust and NAPI bindings. This system enables cryptographic proof that data remains continuously accessible across 100,000+ storage chains using advanced consensus mechanisms and attack mitigation.
 
 ## Overview
 
 This library implements a comprehensive Proof of Storage Continuity protocol where provers must demonstrate continuous possession of data over time across massive networks. The system uses multi-source entropy (blockchain, beacon, local) to create unpredictable data access patterns, preventing pre-computation attacks while supporting hierarchical scaling to 100,000+ storage chains.
-=======
-A high-performance HashChain Proof of Storage Continuity (PoSC) library for Node.js, built with Rust and NAPI bindings. This library enables cryptographic proof that data remains continuously accessible over time using blockchain entropy. This is intended to work as a L2 consensus system that is anchored to the blocks of an existing L1 to assist in the creation of temporal proofs that are typically impossible to ensure with POW or VDF algorithms. For DIG, Chia Blockchain is assumed to be the anchored L1 block chain.
-
-## Overview
-
-HashChain implements a Proof of Storage Continuity system where provers must demonstrate continuous possession of data over time. The system uses blockchain block hashes as entropy sources to create unpredictable data access patterns, preventing pre-computation attacks and ensuring genuine data availability.
-
-Prover first creates a merkle tree of data chunks. Then after anchoring a data ownership commitment to an initial L1 (Chia) block hash. Prover must continue to chain Physical Access Commitments with every new L1 block. To create a new Physical Access Commitment. Each new block contributes to the entropy seed that deterministically selects leaf nodes from the merkle tree and hashes them against new anchored ownership commitments. Prover can verifiably attest that they had physical access to the data with each block added to the hash chain as it impossible to hash the chunks ahead of the block hash existing. The verifier can choose to verify any time period after the initial anchored ownership commitment. For example, if the verifier wants to ensure that the prover held a copy of the data for the past 30 blocks, the prover can provide a proof of the continuity of their physical access for those 30 blocks. If the hash chain is mismatched to the L1 block chain. The proof would fail. The presented hash chain is verifiably locked to the initial ownership commitment, that comprises of the public key and data hash so reuse for other identities and data is detectable.
->>>>>>> 1ec335926d50e7da5d01dee59c0443d822f2d1c7
 
 ## Key Features
 

@@ -23,7 +23,6 @@ rand = "0.8"       # Random number generation for entropy
 
 # Fast Checksums & File Operations
 crc = "3.0"        # Fast CRC32 checksums for file integrity
-crc32fast = "1.4"  # High-performance CRC32 implementation
 memmap2 = "0.9"    # Memory-mapped files (solves Windows file access issues)
 
 # Parallel Processing
