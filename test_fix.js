@@ -53,7 +53,10 @@ const testCallbacks = {
 console.log("Testing ProofOfStorageProver with peerNetwork callbacks...");
 
 try {
-    const prover = new ProofOfStorageProver(Buffer.alloc(32), testCallbacks);
+    // Generate private key (same as public key for demo)
+    const proverKey = Buffer.alloc(32);
+    const privateKey = Buffer.from(proverKey);
+    const prover = new ProofOfStorageProver(proverKey, privateKey, testCallbacks);
     console.log("✅ Success! ProofOfStorageProver created with peerNetwork callbacks");
 } catch (error) {
     console.log("❌ Error:", error.message);

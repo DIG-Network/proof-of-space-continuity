@@ -773,10 +773,7 @@ export interface VerifierEconomicCallbacks {
   /** Penalize failed verification */
   penalizeFailure: (...args: any[]) => any
 }
-/**
- * Peer network management operations
- * Combined verifier callbacks
- */
+/** Combined verifier callbacks */
 export interface VerifierCallbacks {
   /** Blockchain operations */
   blockchain: VerifierBlockchainCallbacks
@@ -807,58 +804,57 @@ export declare function verifyChunkSelection(entropy: MultiSourceEntropy, totalC
 export declare function createCommitmentHash(commitment: StorageCommitment): Buffer
 /** Verify commitment integrity */
 export declare function verifyCommitmentIntegrity(commitment: StorageCommitment): boolean
+/** VDF queue status information */
+export interface VdfQueueStatus {
+  pendingCount: number
+  currentVdf?: string
+  completedCount: number
+  queueCapacity: number
+}
 /**
- * Proof of Storage Prover
+ * Proof of Storage Prover - Production Implementation
  * Handles data storage, commitment generation, and proof creation
  */
 export declare class ProofOfStorageProver {
   /** Create new prover instance */
-  constructor(proverKey: Buffer, callbacks: ProverCallbacks)
-  /** Store data and generate initial commitment */
+  constructor(proverKey: Buffer, proverPrivateKey: Buffer, callbacks: ProverCallbacks)
+  /** Store data and generate initial commitment with real implementation */
   storeData(data: Buffer, outputDirectory: string): StorageCommitment
-  /** Generate storage commitment for current block */
-  generateCommitment(blockHeight?: number | undefined | null): StorageCommitment
-  /** Add commitment to chain and update tracker */
-  addCommitmentToChain(chainId: Buffer, commitment: StorageCommitment, fileName: string, fileSize: number): void
-  /** Increment block height and log progress */
-  incrementBlockHeight(): number
-  /** Generate unique chain ID for this prover */
-  generateChainId(fileName: string): Buffer
-  /** Create compact proof for efficient verification */
-  createCompactProof(): CompactStorageProof
-  /** Create full proof with complete verification data */
-  createFullProof(): FullStorageProof
-  /** Respond to storage challenge */
+  /** Submit a block for VDF-based signing */
+  submitBlockForVdf(blockHeight?: number | undefined | null, blockHash?: Buffer | undefined | null): string
+  /** Generate storage commitment for current block with real data */
+  generateCommitment(blockHeight?: number | undefined | null, blockHash?: Buffer | undefined | null): StorageCommitment
+  /** Create real compact proof for efficient verification */
+  createCompactProof(blockHeight?: number | undefined | null): CompactStorageProof
+  /** Create real full proof with complete verification data */
+  createFullProof(blockHeight?: number | undefined | null): FullStorageProof
+  /** Respond to storage challenge with real data */
   respondToChallenge(challenge: StorageChallenge): ChallengeResponse
-  /** Get prover statistics */
+  /** Get real prover statistics */
   getProverStats(): string
-  /** Verify own data integrity */
+  /** Verify own data integrity with real checks */
   verifySelfIntegrity(): boolean
-  /** Update prover callbacks */
+  /** Get number of active chains */
+  getActiveChainCount(): number
+  /** Get chain information */
+  getChainInfo(chainId: string): string
+  /** Update callbacks */
   updateCallbacks(callbacks: ProverCallbacks): void
-  /** Register peer for network operations */
-  registerPeer(peerId: string, peerInfo: string): boolean
-  /** Issue availability challenge through network */
-  issueAvailabilityChallenge(targetProver: Buffer): string
-  /** Validate chunk count against blockchain */
-  validateChunkCount(fileHash: Buffer, reportedChunks: number): boolean
-  /** Get peer network information */
-  getPeerInfo(peerId: string): string
-  /** Update peer latency metrics */
-  updatePeerLatency(peerId: string, latencyMs: number): boolean
-  /** Display current chain state for debugging */
-  displayChainState(): void
-  /** Get logging statistics */
-  getLoggingStats(): string
+  /** Get the latest shared VDF proof */
+  getLatestSharedVdfProof(): string
+  /** Verify the shared VDF proof chain integrity */
+  verifySharedVdfProofChain(): boolean
+  /** Get VDF performance statistics */
+  getVdfPerformanceStats(): string
 }
 /**
- * Proof of Storage Verifier
+ * Proof of Storage Verifier - Production Implementation
  * Handles proof verification, challenge generation, and network monitoring
  */
 export declare class ProofOfStorageVerifier {
   /** Create new verifier instance */
   constructor(verifierKey: Buffer, callbacks: VerifierCallbacks)
-  /** Verify compact storage proof */
+  /** Verify compact storage proof with production consensus validation */
   verifyCompactProof(proof: CompactStorageProof): boolean
   /** Verify full storage proof */
   verifyFullProof(proof: FullStorageProof): boolean
@@ -866,27 +862,20 @@ export declare class ProofOfStorageVerifier {
   verifyChallengeResponse(response: ChallengeResponse, originalChallenge: StorageChallenge): boolean
   /** Generate challenge for prover */
   generateChallenge(proverKey: Buffer, commitmentHash: Buffer): StorageChallenge
-  /** Audit prover data availability */
+  /** Audit prover data availability with real verification */
   auditProver(proverKey: Buffer): boolean
   /** Get verifier statistics */
   getVerifierStats(): string
-  /** Monitor network for misbehavior */
-  monitorNetwork(): Array<string>
   /** Update verifier callbacks */
   updateCallbacks(callbacks: VerifierCallbacks): void
-  /** Discover active provers through network callbacks */
-  discoverActiveProvers(): Array<string>
-  /** Get prover reputation score */
-  getProverReputation(proverKey: Buffer): number
-  /** Validate availability response through challenge callbacks */
-  validateAvailabilityResponse(response: ChallengeResponse): boolean
-  /** Report challenge result to network */
-  reportChallengeResult(challengeId: Buffer, result: string): boolean
-  /** Get confirmed storage size from blockchain */
-  getConfirmedStorageSize(proverKey: Buffer): number
+  /**
+   * NETWORK CONSENSUS: Verify VDF signature against prover's continuous VDF
+   * This is a critical network consensus validation that ensures blocks are properly signed
+   */
+  verifyVdfSignature(proverPublicKey: Buffer, blockHeight: number, blockHash: Buffer, vdfSignature: Buffer, requiredIterations: number): boolean
 }
 /**
- * Hierarchical Network Manager
+ * Hierarchical Network Manager - Production Implementation
  * Manages the proof-of-storage network with hierarchical organization
  */
 export declare class HierarchicalNetworkManager {
@@ -904,16 +893,10 @@ export declare class HierarchicalNetworkManager {
   getNetworkStats(): NetworkStats
   /** Get active nodes */
   getActiveNodes(): Array<NetworkNode>
-  /** Perform network consensus */
-  performConsensus(): boolean
-  /** Handle network reorganization */
-  reorganizeNetwork(): void
   /** Get this node's key */
   getNodeKey(): Buffer
   /** Get this node's type */
   getNodeType(): string
-  /** Check if this node can act as specified type */
-  canActAs(role: string): boolean
-  /** Get node identity for network operations */
-  getNodeIdentity(): string
+  /** Perform network consensus operation */
+  performConsensus(): boolean
 }

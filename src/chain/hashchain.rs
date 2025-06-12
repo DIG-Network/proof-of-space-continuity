@@ -102,7 +102,7 @@ impl IndividualHashChain {
         };
 
         // Create storage from existing files
-        let storage = ChainStorage::new(data_file_path)?;
+        let mut storage = ChainStorage::new(data_file_path)?;
 
         // Load header
         let header = storage.load_hashchain_header()?;
@@ -120,6 +120,14 @@ impl IndividualHashChain {
                 header.format_version
             )));
         }
+
+        // Set prover key for decoding
+        storage.set_prover_key(header.public_key.clone())?;
+
+        // Load commitments before moving storage
+        let commitments = storage
+            .load_commitments_from_file()
+            .unwrap_or_else(|_| Vec::new()); // Empty vec if file doesn't exist or is corrupt
 
         // Generate chain ID from header data
         let chain_id = generate_chain_id(&header.public_key, &header.data_file_hash);
@@ -144,7 +152,7 @@ impl IndividualHashChain {
             chain_length: header.chain_length,
             initial_block_height: header.initial_block_height as u64,
             initial_block_hash: header.initial_block_hash.clone(),
-            commitments: Vec::new(), // Would load from file in full implementation
+            commitments,
             header: Some(header),
         })
     }

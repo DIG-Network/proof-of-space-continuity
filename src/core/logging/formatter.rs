@@ -1,9 +1,8 @@
-/// Log Formatting Utilities
-/// 
-/// This module provides consistent formatting for logs across the system
-
-use colored::*;
 use chrono::{DateTime, Utc};
+/// Log Formatting Utilities
+///
+/// This module provides consistent formatting for logs across the system
+use colored::*;
 
 /// Format a hash for display (truncated with ellipsis)
 pub fn format_hash(hash: &[u8], length: usize) -> ColoredString {
@@ -78,12 +77,14 @@ pub fn format_progress_bar(current: u64, total: u64, width: usize) -> String {
     } else {
         0.0
     };
-    
+
     let filled = (percentage * width as f64) as usize;
     let empty = width - filled;
-    
-    format!("[{}{}] {:.1}%",
-            "█".repeat(filled).bright_green(),
-            "░".repeat(empty).bright_black(),
-            percentage * 100.0)
-} 
+
+    format!(
+        "[{}{}] {:.1}%",
+        "█".repeat(filled).bright_green(),
+        "░".repeat(empty).bright_black(),
+        percentage * 100.0
+    )
+}

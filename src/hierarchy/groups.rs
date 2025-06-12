@@ -21,6 +21,8 @@ pub struct ChainGroup {
     pub last_group_proof: Option<Buffer>,
     /// Last update block
     pub last_update_block: u64,
+    /// Chain commitment tracking for group verification
+    pub chain_commitments: HashMap<ChainId, Buffer>,
     /// Performance metrics
     pub performance_stats: HashMap<String, f64>,
 }
@@ -33,6 +35,7 @@ impl ChainGroup {
             chain_ids: Vec::new(),
             last_group_proof: None,
             last_update_block: 0,
+            chain_commitments: HashMap::new(),
             performance_stats: HashMap::new(),
         }
     }
@@ -180,7 +183,7 @@ impl ChainGroup {
 
         if group_commitments.is_empty() {
             // Empty group should have zero hash
-            return Ok(expected_proof.as_ref() == &[0u8; 32]);
+            return Ok(expected_proof.as_ref() == [0u8; 32]);
         }
 
         // Rebuild proof
@@ -388,6 +391,40 @@ impl GroupManager {
         );
 
         Ok(results_map.clone())
+    }
+
+    /// Update commitment for a specific chain in its group
+    pub fn update_chain_commitment(
+        &mut self,
+        chain_id: &ChainId,
+        commitment_hash: &[u8; 32],
+    ) -> HashChainResult<()> {
+        if let Some(group_id) = self.chain_to_group.get(chain_id) {
+            if let Some(group) = self.groups.get_mut(group_id) {
+                // Store the commitment hash for this chain
+                group
+                    .chain_commitments
+                    .insert(chain_id.clone(), Buffer::from(commitment_hash.to_vec()));
+
+                // Invalidate cached group proof since commitment changed
+                group.last_group_proof = None;
+
+                // Update last update block to indicate this group has been updated
+                group.last_update_block = group.last_update_block.saturating_add(1);
+
+                debug!(
+                    "Updated commitment {} for chain {} in group {} (invalidated group proof)",
+                    hex::encode(commitment_hash),
+                    hex::encode(chain_id),
+                    group_id
+                );
+                return Ok(());
+            }
+        }
+
+        Err(HashChainError::ChainNotFound {
+            chain_id: hex::encode(chain_id),
+        })
     }
 
     /// Get group statistics

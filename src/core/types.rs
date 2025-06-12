@@ -9,13 +9,13 @@ pub const BLOCK_TIME_SECONDS: u32 = 52; // Blockchain average block time
 pub const PROOF_WINDOW_MINUTES: u32 = 4; // Extended proof window
 pub const PROOF_WINDOW_BLOCKS: u32 = 5; // (PROOF_WINDOW_MINUTES * 60) / BLOCK_TIME_SECONDS
 pub const CHUNK_SIZE_BYTES: u32 = 4096; // 4KB chunks
-pub const CHUNKS_PER_BLOCK: u32 = 4; // Restored to 4 for test compatibility, enhanced algorithm handles small files dynamically
+pub const CHUNKS_PER_BLOCK: u32 = 16; // Enhanced to 16 chunks per block for anti-erasure coding resistance
 pub const HASH_SIZE: usize = 32; // SHA256 output size
 
 // Enhanced Security Constants
-pub const MIN_FILE_SIZE: u64 = 100 * 1024 * 1024; // 100MB minimum to prevent spam
+pub const MIN_FILE_SIZE: u64 = (CHUNKS_PER_BLOCK * CHUNK_SIZE_BYTES) as u64; // Minimum 16 chunks (64KB)
 pub const MEMORY_HARD_VDF_MEMORY: usize = 256 * 1024 * 1024; // 256MB memory requirement
-pub const MEMORY_HARD_ITERATIONS: u32 = 15_000_000; // Adjusted for ~40 second compute
+pub const MEMORY_HARD_ITERATIONS: u32 = 28_000_000; // Tuned for ~16 second compute to match block intervals
 pub const CHUNK_SELECTION_VERSION: u32 = 2; // Updated version with enhanced security
 
 // Chunk Selection Algorithm (Enhanced)
@@ -28,7 +28,7 @@ pub const HASHCHAIN_MAGIC: &[u8] = b"HCH2"; // Updated magic for v2
 pub const HASHCHAIN_FORMAT_VERSION: u32 = 2; // Enhanced format version
 pub const HASHCHAIN_HEADER_SIZE: usize = 512; // Expanded header for new fields
 pub const HASHCHAIN_MAX_CHUNKS: u64 = 1048576; // Max chunks per file (4TB max)
-pub const HASHCHAIN_MIN_CHUNKS: u64 = 25600; // Minimum chunks (100MB)
+pub const HASHCHAIN_MIN_CHUNKS: u64 = 1; // Minimum 1 chunk (4KB)
 
 // Hierarchical Temporal Proof Parameters (Enhanced)
 pub const GLOBAL_ROOT_ITERATIONS: u32 = 20000; // Increased security

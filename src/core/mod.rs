@@ -5,6 +5,7 @@ pub mod logging;
 pub mod memory_hard_vdf;
 pub mod types;
 pub mod utils;
+pub mod vdf_processor;
 
 pub use errors::*;
 pub use logging::*;

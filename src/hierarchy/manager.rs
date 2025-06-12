@@ -192,10 +192,43 @@ impl HierarchicalGlobalChainManager {
 
     pub fn process_new_block_hierarchical(
         &mut self,
-        _block_hash: Buffer,
-        _block_height: u64,
+        block_hash: Buffer,
+        block_height: u64,
     ) -> HashChainResult<()> {
-        // Simplified implementation for now
+        // Process block for all active chains
+        let mut chains_to_update = Vec::new();
+
+        // Collect chains that need updates
+        for (chain_id, chain) in &self.chain_registry {
+            if (chain.chain_length as u64) < block_height {
+                chains_to_update.push(chain_id.clone());
+            }
+        }
+
+        // Update each chain with new block
+        for chain_id in chains_to_update {
+            if let Some(chain) = self.chain_registry.get_mut(&chain_id) {
+                // Update chain state for new block
+                chain.chain_length = block_height as u32;
+
+                // Generate new commitment for this block
+                let commitment_data =
+                    [&chain_id[..], &block_hash[..], &block_height.to_be_bytes()].concat();
+                let commitment_hash = crate::core::utils::compute_sha256(&commitment_data);
+                chain.current_commitment = Some(Buffer::from(commitment_hash.to_vec()));
+
+                // Update group and region managers
+                self.group_manager
+                    .update_chain_commitment(&chain_id, &commitment_hash)?;
+                let group_id = format!(
+                    "group_{:06}",
+                    chain_id.len() / self.chains_per_group as usize
+                );
+                self.region_manager
+                    .update_group_proof(&group_id, block_height)?;
+            }
+        }
+
         Ok(())
     }
 

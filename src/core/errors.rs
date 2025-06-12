@@ -126,6 +126,9 @@ pub enum HashChainError {
 
     #[error("Invalid proof parameters: {reason}")]
     InvalidProofParameters { reason: String },
+
+    #[error("VDF error: {0}")]
+    VDFError(String),
 }
 
 /// Convert to NAPI error for JavaScript

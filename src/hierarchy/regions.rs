@@ -180,7 +180,7 @@ impl Region {
 
         if region_group_proofs.is_empty() {
             // Empty region should have zero hash
-            return Ok(expected_proof.as_ref() == &[0u8; 32]);
+            return Ok(expected_proof.as_ref() == [0u8; 32]);
         }
 
         // Rebuild proof
@@ -388,6 +388,29 @@ impl RegionManager {
         );
 
         Ok(results_map.clone())
+    }
+
+    /// Update proof for a specific group in its region
+    pub fn update_group_proof(
+        &mut self,
+        group_id: &GroupId,
+        block_height: u64,
+    ) -> HashChainResult<()> {
+        if let Some(region_id) = self.group_to_region.get(group_id) {
+            if let Some(region) = self.regions.get_mut(region_id) {
+                // Update last update block to indicate this region has been updated
+                region.last_update_block = block_height;
+                debug!(
+                    "Updated group proof for group {} in region {} at block {}",
+                    group_id, region_id, block_height
+                );
+                return Ok(());
+            }
+        }
+
+        Err(HashChainError::GroupAssignment {
+            reason: format!("Group {} not found in any region", group_id),
+        })
     }
 
     /// Get region statistics

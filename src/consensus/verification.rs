@@ -81,7 +81,7 @@ pub fn verify_proof_of_storage_continuity_internal(
 
         // Verify all selected chunks are within valid range
         for &chunk_idx in &commitment.selected_chunks {
-            if let Err(_) = validate_chunk_index(chunk_idx, total_chunks as u64) {
+            if validate_chunk_index(chunk_idx, total_chunks as u64).is_err() {
                 return Ok(false);
             }
         }
@@ -136,7 +136,7 @@ pub fn verify_commitment_integrity(
 
     // Verify all chunk indices are valid
     for &chunk_idx in &commitment.selected_chunks {
-        if let Err(_) = validate_chunk_index(chunk_idx, total_chunks as u64) {
+        if validate_chunk_index(chunk_idx, total_chunks as u64).is_err() {
             return Ok(false);
         }
     }

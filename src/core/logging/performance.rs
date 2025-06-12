@@ -1,11 +1,10 @@
 /// Performance Logging and Metrics
-/// 
+///
 /// This module provides logging for performance metrics including:
 /// - Execution timing
 /// - Memory usage tracking
 /// - Throughput measurements
 /// - VDF computation monitoring
-
 use super::*;
 use chrono::{DateTime, Utc};
 use colored::*;
@@ -80,9 +79,11 @@ impl ProofTimer {
 
     pub fn finish(self) -> u64 {
         let elapsed_ms = self.elapsed_ms();
-        info!("⚡ {}: {}ms", 
-              self.operation_name.bright_white(),
-              elapsed_ms.to_string().bright_yellow());
+        info!(
+            "⚡ {}: {}ms",
+            self.operation_name.bright_white(),
+            elapsed_ms.to_string().bright_yellow()
+        );
         elapsed_ms
     }
 }
@@ -106,12 +107,19 @@ impl ProofPerformanceLogger {
             return;
         }
 
-        info!("🧮 VDF Performance: {} iterations in {}ms", 
-              iterations.to_string().bright_yellow(),
-              computation_time_ms.to_string().bright_yellow());
+        info!(
+            "🧮 VDF Performance: {} iterations in {}ms",
+            iterations.to_string().bright_yellow(),
+            computation_time_ms.to_string().bright_yellow()
+        );
     }
 
-    pub fn log_storage_performance(&self, operation: &str, data_size_bytes: u64, operation_time_ms: u64) {
+    pub fn log_storage_performance(
+        &self,
+        operation: &str,
+        data_size_bytes: u64,
+        operation_time_ms: u64,
+    ) {
         if !self.config.show_performance {
             return;
         }
@@ -124,12 +132,60 @@ impl ProofPerformanceLogger {
             0.0
         };
 
-        info!("💾 Storage {}: {:.2}MB in {}ms ({:.2} MB/s)", 
-              operation.bright_white(),
-              data_size_mb.to_string().bright_cyan(),
-              operation_time_ms.to_string().bright_yellow(),
-              throughput_mbps.to_string().bright_cyan());
+        info!(
+            "💾 Storage {}: {:.2}MB in {}ms ({:.2} MB/s)",
+            operation.bright_white(),
+            data_size_mb.to_string().bright_cyan(),
+            operation_time_ms.to_string().bright_yellow(),
+            throughput_mbps.to_string().bright_cyan()
+        );
+    }
+
+    /// Get total session uptime since logger creation
+    pub fn get_session_uptime_ms(&self) -> i64 {
+        (Utc::now() - self.start_time).num_milliseconds()
+    }
+
+    /// Log session summary with uptime
+    pub fn log_session_summary(&self, operations_count: u32) {
+        if !self.config.show_performance {
+            return;
+        }
+
+        let uptime_ms = self.get_session_uptime_ms();
+        let uptime_seconds = uptime_ms as f64 / 1000.0;
+
+        info!(
+            "📊 Session Summary: {} operations in {:.2}s ({:.2} ops/s)",
+            operations_count.to_string().bright_yellow(),
+            uptime_seconds.to_string().bright_cyan(),
+            if uptime_seconds > 0.0 {
+                operations_count as f64 / uptime_seconds
+            } else {
+                0.0
+            }
+            .to_string()
+            .bright_cyan()
+        );
+    }
+
+    /// Log categorized performance metric
+    pub fn log_categorized_operation(
+        &self,
+        category: PerformanceCategory,
+        operation_name: &str,
+        duration_ms: u64,
+    ) {
+        if !self.config.show_performance {
+            return;
+        }
+
+        info!(
+            "{} {}: {} in {}ms",
+            category.emoji(),
+            category.category_name().bright_white(),
+            operation_name.bright_white(),
+            duration_ms.to_string().bright_yellow()
+        );
     }
 }
-
- 

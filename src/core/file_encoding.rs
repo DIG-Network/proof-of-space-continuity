@@ -1,6 +1,6 @@
 use napi::bindgen_prelude::*;
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{BufReader, BufWriter, Read, Write};
 
 use crate::core::{types::*, utils::compute_sha256};
 
@@ -27,12 +27,12 @@ impl FileEncoder {
         })
     }
 
-    /// Encode a chunk of data with prover-specific encoding
+    /// Encode a chunk of data with prover-specific encoding (streaming compatible)
     pub fn encode_chunk(&self, chunk_data: &[u8], chunk_index: u32) -> Result<Vec<u8>> {
-        if chunk_data.len() != CHUNK_SIZE_BYTES as usize {
+        if chunk_data.is_empty() || chunk_data.len() > CHUNK_SIZE_BYTES as usize {
             return Err(Error::new(
                 Status::InvalidArg,
-                format!("Chunk must be exactly {} bytes", CHUNK_SIZE_BYTES),
+                format!("Chunk must be 1-{} bytes", CHUNK_SIZE_BYTES),
             ));
         }
 
@@ -41,7 +41,7 @@ impl FileEncoder {
         // Generate chunk-specific encoding key
         let encoding_key = self.generate_chunk_key(chunk_index)?;
 
-        // XOR each byte with corresponding key byte
+        // XOR each byte with corresponding key byte (cycle through key for any chunk size)
         for (i, &data_byte) in chunk_data.iter().enumerate() {
             let key_byte = encoding_key[i % 32];
             encoded.push(data_byte ^ key_byte);
@@ -50,12 +50,12 @@ impl FileEncoder {
         Ok(encoded)
     }
 
-    /// Decode a chunk of data back to original
+    /// Decode a chunk of data back to original (streaming compatible)
     pub fn decode_chunk(&self, encoded_data: &[u8], chunk_index: u32) -> Result<Vec<u8>> {
-        if encoded_data.len() != CHUNK_SIZE_BYTES as usize {
+        if encoded_data.is_empty() || encoded_data.len() > CHUNK_SIZE_BYTES as usize {
             return Err(Error::new(
                 Status::InvalidArg,
-                format!("Encoded chunk must be exactly {} bytes", CHUNK_SIZE_BYTES),
+                format!("Encoded chunk must be 1-{} bytes", CHUNK_SIZE_BYTES),
             ));
         }
 
@@ -110,46 +110,45 @@ impl FileEncoder {
     }
 }
 
-/// Encode entire file with prover-specific encoding
-pub fn encode_file(
+/// Stream encode entire file with prover-specific encoding (never loads entire file in memory)
+pub fn stream_encode_file(
     input_file_path: &str,
     output_file_path: &str,
     prover_key: Buffer,
 ) -> Result<FileEncodingInfo> {
+    const BUFFER_SIZE: usize = 64 * 1024; // 64KB buffer for streaming
+
     let encoder = FileEncoder::new(prover_key)?;
 
-    let mut input_file = File::open(input_file_path).map_err(|e| {
+    let input_file = File::open(input_file_path).map_err(|e| {
         Error::new(
             Status::GenericFailure,
             format!("Failed to open input file: {}", e),
         )
     })?;
 
-    let mut output_file = std::fs::File::create(output_file_path).map_err(|e| {
+    let output_file = File::create(output_file_path).map_err(|e| {
         Error::new(
             Status::GenericFailure,
             format!("Failed to create output file: {}", e),
         )
     })?;
 
-    // Calculate original file hash
-    let original_hash = calculate_file_hash(&mut input_file)?;
+    let mut reader = BufReader::new(input_file);
+    let mut writer = BufWriter::new(output_file);
 
-    // Reset file position
-    input_file
-        .seek(SeekFrom::Start(0))
-        .map_err(|e| Error::new(Status::GenericFailure, format!("Failed to seek: {}", e)))?;
+    // Stream hashing for original file
+    let mut original_hasher = blake3::Hasher::new();
+    let mut encoded_hasher = blake3::Hasher::new();
 
     let mut chunk_index = 0u32;
-    let mut encoded_content = Vec::new();
+    let mut buffer = vec![0u8; BUFFER_SIZE];
 
-    // Process file in chunks
     loop {
-        let mut chunk_buffer = vec![0u8; CHUNK_SIZE_BYTES as usize];
-        let bytes_read = input_file.read(&mut chunk_buffer).map_err(|e| {
+        let bytes_read = reader.read(&mut buffer).map_err(|e| {
             Error::new(
                 Status::GenericFailure,
-                format!("Failed to read chunk: {}", e),
+                format!("Failed to read from input: {}", e),
             )
         })?;
 
@@ -157,74 +156,88 @@ pub fn encode_file(
             break; // End of file
         }
 
-        // Handle partial last chunk
-        if bytes_read < CHUNK_SIZE_BYTES as usize {
-            chunk_buffer.resize(bytes_read, 0);
-            // Pad with zeros to chunk size
-            chunk_buffer.resize(CHUNK_SIZE_BYTES as usize, 0);
+        // Process data in chunk-sized pieces for encoding
+        let actual_data = &buffer[..bytes_read];
+        original_hasher.update(actual_data);
+
+        let mut offset = 0;
+        while offset < bytes_read {
+            let chunk_end = std::cmp::min(offset + CHUNK_SIZE_BYTES as usize, bytes_read);
+            let chunk_data = &actual_data[offset..chunk_end];
+
+            // Encode this chunk
+            let encoded_chunk = encoder.encode_chunk(chunk_data, chunk_index)?;
+
+            // Update encoded hasher
+            encoded_hasher.update(&encoded_chunk);
+
+            // Write encoded chunk
+            writer.write_all(&encoded_chunk).map_err(|e| {
+                Error::new(
+                    Status::GenericFailure,
+                    format!("Failed to write encoded chunk: {}", e),
+                )
+            })?;
+
+            offset = chunk_end;
+            chunk_index += 1;
         }
-
-        // Encode chunk
-        let encoded_chunk = encoder.encode_chunk(&chunk_buffer, chunk_index)?;
-        encoded_content.extend_from_slice(&encoded_chunk);
-
-        chunk_index += 1;
     }
 
-    // Write encoded content to output file
-    std::io::Write::write_all(&mut output_file, &encoded_content).map_err(|e| {
+    // Flush the writer
+    writer.flush().map_err(|e| {
         Error::new(
             Status::GenericFailure,
-            format!("Failed to write output: {}", e),
+            format!("Failed to flush output: {}", e),
         )
     })?;
 
-    // Calculate encoded file hash
-    let encoded_hash = Buffer::from(compute_sha256(&encoded_content).to_vec());
+    // Finalize hashes
+    let original_hash = Buffer::from(original_hasher.finalize().as_bytes().to_vec());
+    let encoded_hash = Buffer::from(encoded_hasher.finalize().as_bytes().to_vec());
 
     Ok(encoder.create_encoding_info(original_hash, encoded_hash))
 }
 
-/// Decode entire file back to original
-pub fn decode_file(
+/// Stream decode entire file back to original (never loads entire file in memory)
+pub fn stream_decode_file(
     input_file_path: &str,
     output_file_path: &str,
     prover_key: Buffer,
 ) -> Result<FileEncodingInfo> {
+    const BUFFER_SIZE: usize = 64 * 1024; // 64KB buffer for streaming
+
     let encoder = FileEncoder::new(prover_key)?;
 
-    let mut input_file = File::open(input_file_path).map_err(|e| {
+    let input_file = File::open(input_file_path).map_err(|e| {
         Error::new(
             Status::GenericFailure,
             format!("Failed to open input file: {}", e),
         )
     })?;
 
-    let mut output_file = std::fs::File::create(output_file_path).map_err(|e| {
+    let output_file = File::create(output_file_path).map_err(|e| {
         Error::new(
             Status::GenericFailure,
             format!("Failed to create output file: {}", e),
         )
     })?;
 
-    // Calculate encoded file hash
-    let encoded_hash = calculate_file_hash(&mut input_file)?;
+    let mut reader = BufReader::new(input_file);
+    let mut writer = BufWriter::new(output_file);
 
-    // Reset file position
-    input_file
-        .seek(SeekFrom::Start(0))
-        .map_err(|e| Error::new(Status::GenericFailure, format!("Failed to seek: {}", e)))?;
+    // Stream hashing for files
+    let mut encoded_hasher = blake3::Hasher::new();
+    let mut decoded_hasher = blake3::Hasher::new();
 
     let mut chunk_index = 0u32;
-    let mut decoded_content = Vec::new();
+    let mut buffer = vec![0u8; BUFFER_SIZE];
 
-    // Process file in chunks
     loop {
-        let mut chunk_buffer = vec![0u8; CHUNK_SIZE_BYTES as usize];
-        let bytes_read = input_file.read(&mut chunk_buffer).map_err(|e| {
+        let bytes_read = reader.read(&mut buffer).map_err(|e| {
             Error::new(
                 Status::GenericFailure,
-                format!("Failed to read chunk: {}", e),
+                format!("Failed to read from input: {}", e),
             )
         })?;
 
@@ -232,49 +245,84 @@ pub fn decode_file(
             break; // End of file
         }
 
-        // Handle partial last chunk
-        if bytes_read < CHUNK_SIZE_BYTES as usize {
-            chunk_buffer.resize(bytes_read, 0);
-            // Pad with zeros to chunk size
-            chunk_buffer.resize(CHUNK_SIZE_BYTES as usize, 0);
+        // Process data in chunk-sized pieces for decoding
+        let actual_data = &buffer[..bytes_read];
+        encoded_hasher.update(actual_data);
+
+        let mut offset = 0;
+        while offset < bytes_read {
+            let chunk_end = std::cmp::min(offset + CHUNK_SIZE_BYTES as usize, bytes_read);
+            let chunk_data = &actual_data[offset..chunk_end];
+
+            // Decode this chunk
+            let decoded_chunk = encoder.decode_chunk(chunk_data, chunk_index)?;
+
+            // Update decoded hasher
+            decoded_hasher.update(&decoded_chunk);
+
+            // Write decoded chunk
+            writer.write_all(&decoded_chunk).map_err(|e| {
+                Error::new(
+                    Status::GenericFailure,
+                    format!("Failed to write decoded chunk: {}", e),
+                )
+            })?;
+
+            offset = chunk_end;
+            chunk_index += 1;
         }
-
-        // Decode chunk
-        let decoded_chunk = encoder.decode_chunk(&chunk_buffer, chunk_index)?;
-        decoded_content.extend_from_slice(&decoded_chunk);
-
-        chunk_index += 1;
     }
 
-    // Write decoded content to output file
-    std::io::Write::write_all(&mut output_file, &decoded_content).map_err(|e| {
+    // Flush the writer
+    writer.flush().map_err(|e| {
         Error::new(
             Status::GenericFailure,
-            format!("Failed to write output: {}", e),
+            format!("Failed to flush output: {}", e),
         )
     })?;
 
-    // Calculate original file hash
-    let original_hash = Buffer::from(compute_sha256(&decoded_content).to_vec());
+    // Finalize hashes
+    let encoded_hash = Buffer::from(encoded_hasher.finalize().as_bytes().to_vec());
+    let original_hash = Buffer::from(decoded_hasher.finalize().as_bytes().to_vec());
 
     Ok(encoder.create_encoding_info(original_hash, encoded_hash))
 }
 
-/// Calculate hash of entire file
-fn calculate_file_hash(file: &mut File) -> Result<Buffer> {
-    let mut content = Vec::new();
-    file.read_to_end(&mut content).map_err(|e| {
+/// Calculate hash of entire file using streaming (never loads entire file in memory)
+pub fn stream_calculate_file_hash(file_path: &str) -> Result<Buffer> {
+    const BUFFER_SIZE: usize = 64 * 1024; // 64KB buffer
+
+    let file = File::open(file_path).map_err(|e| {
         Error::new(
             Status::GenericFailure,
-            format!("Failed to read file: {}", e),
+            format!("Failed to open file: {}", e),
         )
     })?;
 
-    Ok(Buffer::from(compute_sha256(&content).to_vec()))
+    let mut reader = BufReader::new(file);
+    let mut hasher = blake3::Hasher::new();
+    let mut buffer = vec![0u8; BUFFER_SIZE];
+
+    loop {
+        let bytes_read = reader.read(&mut buffer).map_err(|e| {
+            Error::new(
+                Status::GenericFailure,
+                format!("Failed to read file: {}", e),
+            )
+        })?;
+
+        if bytes_read == 0 {
+            break; // End of file
+        }
+
+        hasher.update(&buffer[..bytes_read]);
+    }
+
+    Ok(Buffer::from(hasher.finalize().as_bytes().to_vec()))
 }
 
-/// Verify file encoding matches expected prover
-pub fn verify_file_encoding(
+/// Verify file encoding matches expected prover using streaming
+pub fn stream_verify_file_encoding(
     encoded_file_path: &str,
     encoding_info: &FileEncodingInfo,
 ) -> Result<bool> {
@@ -285,15 +333,8 @@ pub fn verify_file_encoding(
         return Ok(false);
     }
 
-    // Calculate actual encoded file hash
-    let mut file = File::open(encoded_file_path).map_err(|e| {
-        Error::new(
-            Status::GenericFailure,
-            format!("Failed to open file: {}", e),
-        )
-    })?;
-
-    let actual_hash = calculate_file_hash(&mut file)?;
+    // Calculate actual encoded file hash using streaming
+    let actual_hash = stream_calculate_file_hash(encoded_file_path)?;
 
     // Compare with expected hash
     Ok(actual_hash.as_ref() == encoding_info.encoded_hash.as_ref())
@@ -333,7 +374,6 @@ pub fn generate_local_entropy() -> Buffer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
 
     #[test]
     fn test_chunk_encoding_decoding() {
@@ -356,7 +396,7 @@ mod tests {
         let prover_key = Buffer::from([42u8; 32].to_vec());
         let encoder = FileEncoder::new(prover_key).unwrap();
 
-        let mut chunk = vec![5u8; CHUNK_SIZE_BYTES as usize];
+        let chunk = vec![5u8; CHUNK_SIZE_BYTES as usize];
 
         let encoded1 = encoder.encode_chunk(&chunk, 1).unwrap();
         let encoded2 = encoder.encode_chunk(&chunk, 1).unwrap();
@@ -372,7 +412,7 @@ mod tests {
         let encoder1 = FileEncoder::new(prover_key1).unwrap();
         let encoder2 = FileEncoder::new(prover_key2).unwrap();
 
-        let mut chunk = vec![10u8; CHUNK_SIZE_BYTES as usize];
+        let chunk = vec![10u8; CHUNK_SIZE_BYTES as usize];
 
         let encoded1 = encoder1.encode_chunk(&chunk, 0).unwrap();
         let encoded2 = encoder2.encode_chunk(&chunk, 0).unwrap();

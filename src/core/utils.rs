@@ -1,14 +1,14 @@
+use blake3;
 use crc::{Crc, CRC_32_ISO_HDLC};
+use ed25519_dalek::{Keypair, PublicKey, SecretKey, Signature, Signer, Verifier};
 use log::{debug, info};
 use memmap2::Mmap;
 use napi::bindgen_prelude::*;
-use sha2::{Digest, Sha256};
-use sha3::{Sha3_256, Keccak256};
-use blake3;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
-use ed25519_dalek::{Keypair, PublicKey, SecretKey, Signature, Signer, Verifier};
-use argon2;
+use sha2::{Digest, Sha256};
+use sha3::{Keccak256, Sha3_256};
+
 use hmac::{Hmac, Mac, NewMac};
 use std::fs::File;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -218,6 +218,56 @@ pub fn compute_merkle_root(hashes: &[&[u8]]) -> [u8; 32] {
     tree.root().unwrap_or([0u8; 32])
 }
 
+/// Compute full Merkle tree with all intermediate nodes for production proofs
+pub fn compute_full_merkle_tree(hashes: &[&[u8]]) -> ([u8; 32], Vec<[u8; 32]>) {
+    if hashes.is_empty() {
+        return ([0u8; 32], Vec::new());
+    }
+
+    // Convert to the format expected by rs_merkle
+    let leaves: Vec<[u8; 32]> = hashes
+        .iter()
+        .map(|&hash| {
+            let mut leaf = [0u8; 32];
+            leaf.copy_from_slice(&hash[..32]);
+            leaf
+        })
+        .collect();
+
+    use rs_merkle::{algorithms::Sha256 as MerkleSha256, MerkleTree as RsMerkleTree};
+    let tree = RsMerkleTree::<MerkleSha256>::from_leaves(&leaves);
+
+    let root = tree.root().unwrap_or([0u8; 32]);
+
+    // Generate all intermediate nodes level by level
+    let mut all_nodes = Vec::new();
+    let mut current_level = leaves;
+
+    // Build tree bottom-up, collecting all intermediate nodes
+    while current_level.len() > 1 {
+        let mut next_level = Vec::new();
+
+        // Process pairs of nodes
+        for chunk in current_level.chunks(2) {
+            if chunk.len() == 2 {
+                // Pair of nodes - compute parent
+                let parent_data = [&chunk[0][..], &chunk[1][..]].concat();
+                let parent = compute_sha256(&parent_data);
+                all_nodes.push(parent);
+                next_level.push(parent);
+            } else {
+                // Odd node - promote to next level
+                all_nodes.push(chunk[0]);
+                next_level.push(chunk[0]);
+            }
+        }
+
+        current_level = next_level;
+    }
+
+    (root, all_nodes)
+}
+
 /// Scale monitoring utilities
 pub fn check_hierarchical_limits(
     chain_count: u32,
@@ -331,50 +381,68 @@ pub fn generate_deterministic_bytes(seed: &[u8], length: usize) -> Vec<u8> {
     let mut seed_array = [0u8; 32];
     let hash = compute_sha256(seed);
     seed_array.copy_from_slice(&hash);
-    
+
     let mut rng = ChaCha20Rng::from_seed(seed_array);
     (0..length).map(|_| rng.gen()).collect()
 }
 
 /// Memory-hard VDF using Argon2
 pub fn compute_memory_hard_vdf(
-    input: &[u8], 
-    iterations: u32, 
+    input: &[u8],
+    iterations: u32,
     memory_kb: u32,
-    _parallelism: u32
+    _parallelism: u32,
 ) -> HashChainResult<([u8; 32], f64, f64)> {
     let start_time = std::time::Instant::now();
-    
-    // Use Blake3 as a substitute for memory-hard VDF for now
-    let mut vdf_input = Vec::new();
-    vdf_input.extend_from_slice(input);
-    vdf_input.extend_from_slice(&iterations.to_be_bytes());
-    vdf_input.extend_from_slice(&memory_kb.to_be_bytes());
-    
-    // Simulate memory-hard computation with multiple hash rounds
-    let mut hash = compute_blake3(&vdf_input);
-    for _ in 0..iterations.min(1000) {
-        hash = compute_blake3(&hash);
+
+    // Real memory-hard computation using actual memory allocation and access patterns
+    let memory_size = (memory_kb as usize) * 1024;
+    let mut memory_buffer = vec![0u8; memory_size];
+
+    // Initialize memory with deterministic pattern
+    let mut seed = compute_blake3(input);
+    for chunk in memory_buffer.chunks_mut(32) {
+        let chunk_len = chunk.len().min(32);
+        chunk[..chunk_len].copy_from_slice(&seed[..chunk_len]);
+        seed = compute_blake3(&[&seed[..], &iterations.to_be_bytes()].concat());
     }
-    
+
+    // Perform memory-hard iterations with real memory access
+    let mut state = compute_blake3(input);
+    for i in 0..iterations {
+        // Memory-dependent computation - read from pseudo-random location
+        let read_addr = (u32::from_be_bytes([state[0], state[1], state[2], state[3]]) as usize)
+            % (memory_size - 64);
+        let memory_chunk = &memory_buffer[read_addr..read_addr + 32];
+
+        // Mix state with memory content
+        state = compute_blake3(&[&state[..], memory_chunk, &i.to_be_bytes()].concat());
+
+        // Write back to different location
+        let write_addr = (u32::from_be_bytes([state[4], state[5], state[6], state[7]]) as usize)
+            % (memory_size - 32);
+        memory_buffer[write_addr..write_addr + 32].copy_from_slice(&state);
+    }
+
+    let hash = state;
+
     let mut output = [0u8; 32];
     output.copy_from_slice(&hash);
-    
+
     let computation_time = start_time.elapsed().as_secs_f64() * 1000.0; // ms
     let memory_usage = memory_kb as f64 * 1024.0; // bytes
-    
+
     Ok((output, computation_time, memory_usage))
 }
 
 /// HMAC-based key derivation
 pub fn derive_key(master_key: &[u8], context: &[u8], info: &str) -> [u8; 32] {
     type HmacSha256 = Hmac<Sha256>;
-    
-    let mut mac = HmacSha256::new_varkey(master_key)
-        .expect("HMAC can take key of any size");
+
+    let mut mac = HmacSha256::new_varkey(master_key).expect("HMAC can take key of any size");
     mac.update(context);
     mac.update(info.as_bytes());
-    
+
     let result = mac.finalize().into_bytes();
     let mut derived_key = [0u8; 32];
     derived_key.copy_from_slice(&result);
@@ -386,15 +454,18 @@ pub fn sign_data(private_key: &[u8], data: &[u8]) -> HashChainResult<Vec<u8>> {
     if private_key.len() != 32 {
         return Err(HashChainError::InvalidPrivateKeySize(private_key.len()));
     }
-    
+
     let secret_key = SecretKey::from_bytes(private_key)
         .map_err(|e| HashChainError::CryptographicError(format!("Invalid private key: {}", e)))?;
-    
+
     let public_key = PublicKey::from(&secret_key);
-    let keypair = Keypair { secret: secret_key, public: public_key };
-    
+    let keypair = Keypair {
+        secret: secret_key,
+        public: public_key,
+    };
+
     let signature = keypair.sign(data);
-    
+
     Ok(signature.to_bytes().to_vec())
 }
 
@@ -402,139 +473,137 @@ pub fn verify_signature(public_key: &[u8], data: &[u8], signature: &[u8]) -> Has
     if public_key.len() != 32 {
         return Err(HashChainError::InvalidPublicKeySize(public_key.len()));
     }
-    
+
     if signature.len() != 64 {
         return Err(HashChainError::InvalidSignatureSize(signature.len()));
     }
-    
+
     let public_key = PublicKey::from_bytes(public_key)
         .map_err(|e| HashChainError::CryptographicError(format!("Invalid public key: {}", e)))?;
-    
+
     let signature = Signature::from_bytes(signature)
         .map_err(|e| HashChainError::CryptographicError(format!("Invalid signature: {}", e)))?;
-    
+
     Ok(public_key.verify(data, &signature).is_ok())
 }
 
 /// Generate cryptographically secure random entropy
 pub fn generate_secure_entropy(additional_data: &[u8]) -> [u8; 32] {
     let mut entropy_sources = Vec::new();
-    
+
     // System timestamp
     let timestamp = get_current_timestamp();
     entropy_sources.extend_from_slice(&timestamp.to_be_bytes());
-    
+
     // System randomness
     let mut system_random = [0u8; 32];
     getrandom::getrandom(&mut system_random).unwrap_or_default();
     entropy_sources.extend_from_slice(&system_random);
-    
+
     // Additional user data
     entropy_sources.extend_from_slice(additional_data);
-    
+
     // Process ID and thread ID for uniqueness
     entropy_sources.extend_from_slice(&std::process::id().to_be_bytes());
-    
+
     // Final hash
     compute_blake3(&entropy_sources)
 }
 
-/// Compute real commitment hash with proper cryptographic binding
-pub fn compute_commitment_hash(
-    prover_key: &[u8],
-    data_hash: &[u8],
-    block_height: u64,
-    block_hash: &[u8],
-    selected_chunks: &[u32],
-    chunk_hashes: &[Vec<u8>],
-    vdf_output: &[u8],
-    entropy_hash: &[u8],
-) -> [u8; 32] {
+/// Parameters for computing commitment hash
+pub struct CommitmentParams<'a> {
+    pub prover_key: &'a [u8],
+    pub data_hash: &'a [u8],
+    pub block_height: u64,
+    pub block_hash: &'a [u8],
+    pub selected_chunks: &'a [u32],
+    pub chunk_hashes: &'a [Vec<u8>],
+    pub vdf_output: &'a [u8],
+    pub entropy_hash: &'a [u8],
+}
+
+/// Compute commitment hash from parameters struct
+pub fn compute_commitment_hash(params: &CommitmentParams) -> [u8; 32] {
     let mut commitment_data = Vec::new();
-    
+
     // Prover identity
-    commitment_data.extend_from_slice(prover_key);
-    
+    commitment_data.extend_from_slice(params.prover_key);
+
     // Data commitment
-    commitment_data.extend_from_slice(data_hash);
-    
+    commitment_data.extend_from_slice(params.data_hash);
+
     // Blockchain anchor
-    commitment_data.extend_from_slice(&block_height.to_be_bytes());
-    commitment_data.extend_from_slice(block_hash);
-    
+    commitment_data.extend_from_slice(&params.block_height.to_be_bytes());
+    commitment_data.extend_from_slice(params.block_hash);
+
     // Selected chunks (deterministic challenge)
-    for &chunk_idx in selected_chunks {
+    for &chunk_idx in params.selected_chunks {
         commitment_data.extend_from_slice(&chunk_idx.to_be_bytes());
     }
-    
+
     // Chunk proofs
-    for chunk_hash in chunk_hashes {
+    for chunk_hash in params.chunk_hashes {
         commitment_data.extend_from_slice(chunk_hash);
     }
-    
+
     // VDF proof
-    commitment_data.extend_from_slice(vdf_output);
-    
+    commitment_data.extend_from_slice(params.vdf_output);
+
     // Entropy contribution
-    commitment_data.extend_from_slice(entropy_hash);
-    
+    commitment_data.extend_from_slice(params.entropy_hash);
+
     // Use Blake3 for final commitment (faster than SHA2)
     compute_blake3(&commitment_data)
 }
 
-/// Deterministic chunk selection using entropy
-pub fn select_chunks_deterministic(
-    entropy: &[u8],
-    total_chunks: u32,
-    num_chunks: u32,
-) -> Vec<u32> {
-    if num_chunks == 0 || total_chunks == 0 || num_chunks > total_chunks {
+/// Deterministic chunk selection using entropy (updated for 16 chunks)
+pub fn select_chunks_deterministic(entropy: &[u8], total_chunks: f64, num_chunks: u32) -> Vec<u32> {
+    let total_chunks_u32 = total_chunks as u32;
+
+    if num_chunks == 0 || total_chunks_u32 == 0 || num_chunks > total_chunks_u32 {
         return Vec::new();
     }
-    
+
     let mut selected = Vec::new();
     let mut used_indices = std::collections::HashSet::new();
-    
+
     // Use entropy to seed deterministic selection
     let mut current_entropy = entropy.to_vec();
-    
+
     while selected.len() < num_chunks as usize {
         // Hash current entropy to get next random value
         let hash = compute_blake3(&current_entropy);
-        let chunk_index = u32::from_be_bytes([hash[0], hash[1], hash[2], hash[3]]) % total_chunks;
-        
+        let chunk_index =
+            u32::from_be_bytes([hash[0], hash[1], hash[2], hash[3]]) % total_chunks_u32;
+
         if !used_indices.contains(&chunk_index) {
             selected.push(chunk_index);
             used_indices.insert(chunk_index);
         }
-        
+
         // Update entropy for next iteration
         current_entropy = hash.to_vec();
     }
-    
+
     selected.sort_unstable();
     selected
 }
 
 /// Verify chunk selection algorithm
-pub fn verify_chunk_selection(
-    entropy: &[u8],
-    total_chunks: u32,
-    selected_chunks: &[u32],
-) -> bool {
+pub fn verify_chunk_selection(entropy: &[u8], total_chunks: u32, selected_chunks: &[u32]) -> bool {
     let num_chunks = selected_chunks.len() as u32;
-    let expected = select_chunks_deterministic(entropy, total_chunks, num_chunks);
-    
+    let expected = select_chunks_deterministic(entropy, total_chunks as f64, num_chunks);
+
     if expected.len() != selected_chunks.len() {
         return false;
     }
-    
+
     for (i, &chunk) in selected_chunks.iter().enumerate() {
         if chunk != expected[i] {
             return false;
         }
     }
-    
+
     true
 }
 
@@ -545,24 +614,202 @@ pub fn generate_multi_source_entropy(
     prover_entropy: &[u8],
 ) -> [u8; 32] {
     let mut entropy_data = Vec::new();
-    
+
     // Blockchain randomness
     entropy_data.extend_from_slice(blockchain_entropy);
-    
+
     // External beacon (if available)
     if let Some(beacon) = beacon_entropy {
         entropy_data.extend_from_slice(beacon);
     }
-    
+
     // Prover-specific entropy
     entropy_data.extend_from_slice(prover_entropy);
-    
+
     // System entropy
     let secure_entropy = generate_secure_entropy(&entropy_data);
     entropy_data.extend_from_slice(&secure_entropy);
-    
+
     // Final combination using Keccak256 (different from other hashes)
     compute_keccak256(&entropy_data)
+}
+
+/// Continuous VDF state for tracking iterations and state
+pub struct ContinuousVDF {
+    current_state: [u8; 32],
+    total_iterations: u64,
+    last_block_height: u64,
+    last_block_hash: [u8; 32],
+    memory_buffer: Vec<u8>,
+    pub memory_size: usize,
+    pub start_time: std::time::Instant,
+}
+
+impl ContinuousVDF {
+    pub fn new(initial_state: [u8; 32], memory_kb: u32) -> Self {
+        let memory_size = (memory_kb as usize) * 1024;
+        let mut memory_buffer = vec![0u8; memory_size];
+
+        // Initialize memory with deterministic pattern
+        let mut seed = compute_blake3(&initial_state);
+        for chunk in memory_buffer.chunks_mut(32) {
+            let chunk_len = chunk.len().min(32);
+            chunk[..chunk_len].copy_from_slice(&seed[..chunk_len]);
+            seed = compute_blake3(&[&seed[..], &0u64.to_be_bytes()].concat());
+        }
+
+        Self {
+            current_state: initial_state,
+            total_iterations: 0,
+            last_block_height: 0,
+            last_block_hash: [0u8; 32],
+            memory_buffer,
+            memory_size,
+            start_time: std::time::Instant::now(),
+        }
+    }
+
+    /// Perform one iteration of the VDF
+    pub fn iterate(&mut self) -> [u8; 32] {
+        // Memory-dependent computation - read from pseudo-random location
+        let read_addr = (u32::from_be_bytes([
+            self.current_state[0],
+            self.current_state[1],
+            self.current_state[2],
+            self.current_state[3],
+        ]) as usize)
+            % (self.memory_size - 64);
+
+        let memory_chunk = &self.memory_buffer[read_addr..read_addr + 32];
+
+        // Mix state with memory content
+        self.current_state = compute_blake3(
+            &[
+                &self.current_state[..],
+                memory_chunk,
+                &self.total_iterations.to_be_bytes(),
+            ]
+            .concat(),
+        );
+
+        // Write back to different location
+        let write_addr = (u32::from_be_bytes([
+            self.current_state[4],
+            self.current_state[5],
+            self.current_state[6],
+            self.current_state[7],
+        ]) as usize)
+            % (self.memory_size - 32);
+
+        self.memory_buffer[write_addr..write_addr + 32].copy_from_slice(&self.current_state);
+
+        self.total_iterations += 1;
+        self.current_state
+    }
+
+    /// Get current VDF state and iteration count
+    pub fn get_state(&self) -> ([u8; 32], u64) {
+        (self.current_state, self.total_iterations)
+    }
+
+    /// Sign a block against the current VDF state
+    pub fn sign_block(
+        &mut self,
+        block_height: u64,
+        block_hash: [u8; 32],
+        required_iterations: u64,
+    ) -> HashChainResult<[u8; 32]> {
+        if self.total_iterations < required_iterations {
+            return Err(HashChainError::VDFError(format!(
+                "Insufficient VDF iterations: {} < {}",
+                self.total_iterations, required_iterations
+            )));
+        }
+
+        // Create block signature using VDF state
+        let signature_data = [
+            &self.current_state[..],
+            &block_height.to_be_bytes(),
+            &block_hash[..],
+            &self.total_iterations.to_be_bytes(),
+        ]
+        .concat();
+
+        let signature = compute_blake3(&signature_data);
+
+        // Update last block info
+        self.last_block_height = block_height;
+        self.last_block_hash = block_hash;
+
+        Ok(signature)
+    }
+
+    /// Verify a block signature
+    pub fn verify_block_signature(
+        &self,
+        block_height: u64,
+        block_hash: [u8; 32],
+        signature: [u8; 32],
+        required_iterations: u64,
+    ) -> bool {
+        if self.total_iterations < required_iterations {
+            return false;
+        }
+
+        let signature_data = [
+            &self.current_state[..],
+            &block_height.to_be_bytes(),
+            &block_hash[..],
+            &self.total_iterations.to_be_bytes(),
+        ]
+        .concat();
+
+        let expected_signature = compute_blake3(&signature_data);
+        signature == expected_signature
+    }
+}
+
+/// Sign block data using Ed25519 signature
+pub fn sign_block(
+    private_key: &[u8],
+    block_height: u64,
+    block_hash: &[u8],
+    vdf_state: &[u8],
+    total_iterations: u64,
+) -> HashChainResult<Vec<u8>> {
+    // Create block data to sign
+    let block_data = [
+        &block_height.to_be_bytes(),
+        block_hash,
+        vdf_state,
+        &total_iterations.to_be_bytes(),
+    ]
+    .concat();
+
+    // Sign the block data
+    sign_data(private_key, &block_data)
+}
+
+/// Verify block signature
+pub fn verify_block_signature(
+    public_key: &[u8],
+    block_height: u64,
+    block_hash: &[u8],
+    vdf_state: &[u8],
+    total_iterations: u64,
+    signature: &[u8],
+) -> HashChainResult<bool> {
+    // Recreate block data
+    let block_data = [
+        &block_height.to_be_bytes(),
+        block_hash,
+        vdf_state,
+        &total_iterations.to_be_bytes(),
+    ]
+    .concat();
+
+    // Verify the signature
+    verify_signature(public_key, &block_data, signature)
 }
 
 #[cfg(test)]

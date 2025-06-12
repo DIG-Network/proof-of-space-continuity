@@ -95,9 +95,10 @@ const proverCallbacks = {
   }
 }
 
-// Initialize prover
+// Initialize prover (requires both public and private key)
 const chainId = 'my-storage-chain-001'
-const prover = new ProofOfStorageProver(chainId, proverCallbacks)
+const privateKey = Buffer.alloc(32, 1) // Generate secure private key in production
+const prover = new ProofOfStorageProver(chainId, privateKey, proverCallbacks)
 
 // Store data and generate commitment
 const data = Buffer.from('important data to store...')
