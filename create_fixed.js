@@ -1,4 +1,0 @@
-const fs = require("fs"); let content = fs.readFileSync("example_prover_verifier.js", "utf8"); content = `const { createMockProverCallbacks, createMockVerifierCallbacks } = require("./__test__/mock-callbacks");
-` + content; content = content.replace("const proverCallbacks = createMockProverCallbacks();", "// Using mock callbacks
-const proverCallbacks = createMockProverCallbacks();"); content = content.replace("const verifierCallbacks = createMockVerifierCallbacks();", "// Using mock callbacks
-const verifierCallbacks = createMockVerifierCallbacks();"); fs.writeFileSync("example_prover_verifier_fixed.js", content); console.log("Created fixed version");

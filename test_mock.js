@@ -1,1 +1,0 @@
-const { ProofOfStorageProver } = require("./index.js"); const { createMockProverCallbacks } = require("./__test__/mock-callbacks"); try { const prover = new ProofOfStorageProver(Buffer.alloc(32), createMockProverCallbacks()); console.log("Success with mock callbacks!"); } catch (error) { console.log("Error:", error.message); }
