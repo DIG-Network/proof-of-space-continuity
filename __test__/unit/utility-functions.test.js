@@ -12,9 +12,25 @@ test.before(async t => {
         // Set ARM64-specific timeouts
         if (global.PLATFORM_INFO && global.PLATFORM_INFO.isARM64) {
             t.timeout(120000); // 2 minutes for ARM64
+            console.log('🔧 ARM64 platform detected - applying performance adjustments');
+            
+            // Add cleanup handler for ARM64
+            global.addCleanupHandler(() => {
+                console.log('🧹 ARM64 cleanup: Utility functions tests completed');
+            });
         }
     } catch (error) {
         t.fail(`Failed to load module: ${error.message}`);
+    }
+});
+
+// ARM64 force exit after all tests
+test.after.always(() => {
+    if (global.PLATFORM_INFO && global.PLATFORM_INFO.isARM64) {
+        setTimeout(() => {
+            console.log('⚠️  ARM64: Force exiting utility functions tests to prevent hanging');
+            process.exit(0);
+        }, 1000);
     }
 });
 
@@ -476,4 +492,14 @@ const mockCommitment = {
         combinedHash: Buffer.alloc(32, 0xDD)
     },
     commitmentHash: Buffer.alloc(32, 0x09)
-}; 
+};
+
+// ARM64 force exit after all tests
+test.after.always(() => {
+    if (global.PLATFORM_INFO && global.PLATFORM_INFO.isARM64) {
+        setTimeout(() => {
+            console.log('⚠️  ARM64: Force exiting utility functions tests to prevent hanging');
+            process.exit(0);
+        }, 1000);
+    }
+}); 

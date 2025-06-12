@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<network>
+  <nodes>
+    <node id="1" type="prover" location="us-east-1"/>
+    <node id="2" type="verifier" location="eu-west-1"/>
+  </nodes>
+</network>

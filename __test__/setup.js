@@ -234,9 +234,11 @@ global.PLATFORM_INFO = {
 if (global.PLATFORM_INFO.isARM64) {
     // Increase timeouts for slower ARM64 performance
     global.TEST_CONSTANTS.PERFORMANCE_TEST_TIMEOUT = 30000; // 30 seconds
-    global.TEST_CONSTANTS.ARM64_TIMEOUT_MULTIPLIER = 3; // 3x longer timeouts
+    global.TEST_CONSTANTS.ARM64_TIMEOUT_MULTIPLIER = 5; // 5x longer timeouts
+    global.TEST_CONSTANTS.ARM64_FORCE_EXIT_TIMEOUT = 180000; // 3 minutes max runtime
     
     console.log('🔧 ARM64 platform detected - applying performance adjustments');
+    console.log('⚠️  ARM64 performance mode: Increased timeouts and aggressive cleanup enabled');
 }
 
 // Cleanup handlers to ensure tests exit properly

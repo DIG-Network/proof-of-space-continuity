@@ -377,7 +377,7 @@ impl ProofOfStorageProver {
     pub fn get_prover_stats(&self) -> String {
         format!(
             "{{\"prover_key\": \"{}\", \"data_stored\": true, \"challenges_responded\": 0}}",
-            hex::encode(self.prover_key.as_ref())
+            hex::encode(&self.prover_key)
         )
     }
 
@@ -456,7 +456,7 @@ impl ProofOfStorageVerifier {
 
         Ok(Self {
             verifier_key,
-            callbacks,
+            callbacks
         })
     }
 
@@ -525,7 +525,7 @@ impl ProofOfStorageVerifier {
     pub fn get_verifier_stats(&self) -> String {
         format!(
             "{{\"verifier_key\": \"{}\", \"proofs_verified\": 0, \"challenges_issued\": 0}}",
-            hex::encode(self.verifier_key.as_ref())
+            hex::encode(&self.verifier_key)
         )
     }
 
@@ -710,7 +710,7 @@ impl HierarchicalNetworkManager {
     pub fn get_node_identity(&self) -> String {
         format!(
             "{{\"node_key\": \"{}\", \"node_type\": \"{}\", \"active_nodes\": {}}}",
-            hex::encode(self.node_key.as_ref()),
+            hex::encode(&self.node_key),
             self.node_type,
             self.active_nodes.len()
         )

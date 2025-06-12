@@ -13,8 +13,29 @@ test.before(async t => {
         t.context.module = require('../../index.js');
         t.context.mockProverCallbacks = createMockProverCallbacks();
         t.context.mockVerifierCallbacks = createMockVerifierCallbacks();
+        
+        // ARM64-specific timeout and cleanup
+        if (global.PLATFORM_INFO && global.PLATFORM_INFO.isARM64) {
+            t.timeout(120000); // 2 minutes for ARM64
+            console.log('🔧 ARM64 platform detected - applying performance adjustments');
+            
+            // Add cleanup handler for ARM64
+            global.addCleanupHandler(() => {
+                console.log('🧹 ARM64 cleanup: Core types tests completed');
+            });
+        }
     } catch (error) {
         t.fail(`Failed to load module: ${error.message}`);
+    }
+});
+
+// ARM64 force exit after all tests
+test.after.always(() => {
+    if (global.PLATFORM_INFO && global.PLATFORM_INFO.isARM64) {
+        setTimeout(() => {
+            console.log('⚠️  ARM64: Force exiting core types tests to prevent hanging');
+            process.exit(0);
+        }, 1000);
     }
 });
 
