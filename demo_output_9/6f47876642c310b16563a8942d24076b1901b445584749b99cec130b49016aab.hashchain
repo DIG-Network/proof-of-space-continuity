@@ -1,0 +1,7 @@
+HASHCHAIN_HEADER
+magic=48434832
+format_version=2
+total_chunks=1
+chunk_size=4096
+chain_length=0
+initial_block_height=0

@@ -104,6 +104,28 @@ pub enum HashChainError {
 
     #[error("Global state error: {reason}")]
     GlobalState { reason: String },
+
+    // Cryptographic errors for production implementation
+    #[error("Invalid private key: expected 32 bytes, got {0}")]
+    InvalidPrivateKeySize(usize),
+
+    #[error("Invalid signature: expected 64 bytes, got {0}")]
+    InvalidSignatureSize(usize),
+
+    #[error("Cryptographic operation failed: {0}")]
+    CryptographicError(String),
+
+    #[error("VDF verification failed: {reason}")]
+    VDFVerificationFailed { reason: String },
+
+    #[error("Entropy generation failed: {reason}")]
+    EntropyGenerationFailed { reason: String },
+
+    #[error("Key derivation failed: {reason}")]
+    KeyDerivationFailed { reason: String },
+
+    #[error("Invalid proof parameters: {reason}")]
+    InvalidProofParameters { reason: String },
 }
 
 /// Convert to NAPI error for JavaScript

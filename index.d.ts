@@ -818,6 +818,12 @@ export declare class ProofOfStorageProver {
   storeData(data: Buffer, outputDirectory: string): StorageCommitment
   /** Generate storage commitment for current block */
   generateCommitment(blockHeight?: number | undefined | null): StorageCommitment
+  /** Add commitment to chain and update tracker */
+  addCommitmentToChain(chainId: Buffer, commitment: StorageCommitment, fileName: string, fileSize: number): void
+  /** Increment block height and log progress */
+  incrementBlockHeight(): number
+  /** Generate unique chain ID for this prover */
+  generateChainId(fileName: string): Buffer
   /** Create compact proof for efficient verification */
   createCompactProof(): CompactStorageProof
   /** Create full proof with complete verification data */
@@ -840,6 +846,10 @@ export declare class ProofOfStorageProver {
   getPeerInfo(peerId: string): string
   /** Update peer latency metrics */
   updatePeerLatency(peerId: string, latencyMs: number): boolean
+  /** Display current chain state for debugging */
+  displayChainState(): void
+  /** Get logging statistics */
+  getLoggingStats(): string
 }
 /**
  * Proof of Storage Verifier

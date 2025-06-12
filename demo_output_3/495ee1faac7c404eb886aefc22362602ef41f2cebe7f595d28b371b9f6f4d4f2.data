@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+contract StorageVerification {
+    mapping(bytes32 => bool) public commitments;
+    uint256 public createdAt = 1749694683;
+    
+    function verifyCommitment(bytes32 hash) public returns (bool) {
+        return commitments[hash];
+    }
+}

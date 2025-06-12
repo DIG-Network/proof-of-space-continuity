@@ -1,0 +1,1 @@
+{"users":[{"id":1,"name":"Alice","role":"prover","joinedAt":1749694748049},{"id":2,"name":"Bob","role":"verifier","joinedAt":1749694749049},{"id":3,"name":"Charlie","role":"admin","joinedAt":1749694750049}],"metadata":{"version":"1.1","updated":"2025-06-12T02:19:08.049Z"}}

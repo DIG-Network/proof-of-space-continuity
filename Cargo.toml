@@ -15,11 +15,18 @@ crate-type = ["cdylib"]
 napi = { version = "2.12.2", default-features = false, features = ["napi6", "async"] }
 napi-derive = "2.12.2"
 
-# Cryptography & Merkle Trees
-sha2 = "0.10"
+# Cryptography & Merkle Trees (conservative versions)
+sha2 = "0.9"
+sha3 = "0.9"       # SHA-3 family for additional hash diversity
+blake3 = "1.3"     # Fast cryptographic hash function
 hex = "0.4"
-rs_merkle = "1.4"  # Production-ready merkle tree implementation
-rand = "0.8"       # Random number generation for entropy
+rs_merkle = "1.2"  # Production-ready merkle tree implementation
+rand = "0.7"       # Random number generation for entropy
+rand_chacha = "0.2" # ChaCha20 RNG for deterministic randomness
+getrandom = "0.1"   # OS random number generation
+ed25519-dalek = "1.0.1" # Ed25519 signatures for prover authentication  
+argon2 = "0.3"     # Memory-hard function for VDF implementations
+hmac = "0.10"      # HMAC for key derivation
 
 # Fast Checksums & File Operations
 crc = "3.0"        # Fast CRC32 checksums for file integrity
@@ -35,8 +42,11 @@ serde_json = "1.0" # JSON serialization for statistics and results
 # Error Handling
 thiserror = "1.0"
 
-# Logging (optional, useful for debugging)
+# Logging (conservative versions)
 log = "0.4"
+env_logger = "0.9"  # Environment-based logger configuration
+chrono = { version = "0.4.19", features = ["serde"] }  # For timestamps
+colored = "2.0"  # For colored console output
 
 [build-dependencies]
 napi-build = "2.0.1"

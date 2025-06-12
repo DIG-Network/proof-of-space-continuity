@@ -9,6 +9,7 @@ pub mod hierarchy;
 
 // Re-export commonly used types
 pub use core::errors::*;
+pub use core::logging::*;
 pub use core::types::*;
 pub use hierarchy::*;
 
@@ -214,6 +215,9 @@ pub struct ProofOfStorageProver {
     prover_key: Buffer,
     callbacks: ProverCallbacks,
     inner_chain: Option<IndividualHashChain>,
+    chain_tracker: Option<ChainStateTracker>,
+    network_logger: Option<NetworkLogger>,
+    performance_logger: Option<ProofPerformanceLogger>,
 }
 
 #[napi]
@@ -223,10 +227,17 @@ impl ProofOfStorageProver {
     pub fn new(prover_key: Buffer, callbacks: ProverCallbacks) -> Result<Self> {
         validate_public_key(&prover_key)?;
 
+        // Initialize logging system
+        let config = LoggerConfig::default();
+        let _ = init_logger(Some(config.clone()));
+
         Ok(Self {
             prover_key,
             callbacks,
             inner_chain: None,
+            chain_tracker: Some(ChainStateTracker::new(config.clone())),
+            network_logger: Some(NetworkLogger::new(config.clone())),
+            performance_logger: Some(ProofPerformanceLogger::new(config)),
         })
     }
 
@@ -237,42 +248,110 @@ impl ProofOfStorageProver {
         data: Buffer,
         output_directory: String,
     ) -> Result<StorageCommitment> {
+        let timer = ProofTimer::new("store_data");
+        
+        log_with_color(LogLevel::Info, "💾", "PROVER", 
+                      &format!("Storing {} bytes of data...", data.len()));
+
         // Create inner chain for data storage
+        let data_hash = crate::core::utils::compute_blake3(&data);
         let chain = IndividualHashChain::new_minimal(
             self.prover_key.clone(),
             0,
-            Buffer::from([0u8; 32].to_vec()),
+            Buffer::from(data_hash.to_vec()),
         )?;
 
         // Store data
         let mut chain_mut = chain;
-        chain_mut.stream_data(data.clone(), output_directory)?;
+        chain_mut.stream_data(data.clone(), output_directory.clone())?;
         self.inner_chain = Some(chain_mut);
 
-        Ok(StorageCommitment {
+        // Generate real entropy
+        let blockchain_entropy = Buffer::from(crate::core::utils::generate_deterministic_bytes(&data_hash, 32));
+        let local_entropy = Buffer::from(crate::core::utils::generate_secure_entropy(&self.prover_key).to_vec());
+        let combined_entropy = crate::core::utils::generate_multi_source_entropy(
+            &blockchain_entropy,
+            None,
+            &local_entropy,
+        );
+
+        // Calculate chunk parameters
+        let chunk_size = 4096;
+        let total_chunks = ((data.len() + chunk_size - 1) / chunk_size) as u32;
+        let selected_chunks = crate::core::utils::select_chunks_deterministic(
+            &combined_entropy,
+            total_chunks.max(4),
+            4,
+        );
+
+        // Generate chunk hashes
+        let mut chunk_hashes = Vec::new();
+        for &chunk_idx in &selected_chunks {
+            let start = (chunk_idx as usize * chunk_size).min(data.len());
+            let end = ((chunk_idx as usize + 1) * chunk_size).min(data.len());
+            let chunk_data = &data[start..end];
+            let chunk_hash = crate::core::utils::compute_blake3(chunk_data);
+            chunk_hashes.push(Buffer::from(chunk_hash.to_vec()));
+        }
+
+        // Compute VDF proof
+        let vdf_input = combined_entropy;
+        let (vdf_output, computation_time, memory_usage) = 
+            crate::core::utils::compute_memory_hard_vdf(&vdf_input, 1000, 256, 1)
+                .map_err(|e| Error::new(Status::GenericFailure, format!("VDF computation failed: {}", e)))?;
+
+        let vdf_proof = MemoryHardVDFProof {
+            input_state: Buffer::from(vdf_input.to_vec()),
+            output_state: Buffer::from(vdf_output.to_vec()),
+            iterations: 1000,
+            memory_access_samples: Vec::new(),
+            computation_time_ms: computation_time,
+            memory_usage_bytes: memory_usage,
+        };
+
+        let entropy = MultiSourceEntropy {
+            blockchain_entropy: blockchain_entropy.clone(),
+            beacon_entropy: None,
+            local_entropy: local_entropy.clone(),
+            timestamp: crate::core::utils::get_current_timestamp(),
+            combined_hash: Buffer::from(combined_entropy.to_vec()),
+        };
+
+        // Generate real commitment hash
+        let commitment_hash = crate::core::utils::compute_commitment_hash(
+            &self.prover_key,
+            &data_hash,
+            0,
+            &[0u8; 32],
+            &selected_chunks,
+            &chunk_hashes.iter().map(|h| h.to_vec()).collect::<Vec<_>>(),
+            &vdf_output,
+            &combined_entropy,
+        );
+
+        let commitment = StorageCommitment {
             prover_key: self.prover_key.clone(),
-            data_hash: Buffer::from([0u8; 32].to_vec()),
+            data_hash: Buffer::from(data_hash.to_vec()),
             block_height: 0,
             block_hash: Buffer::from([0u8; 32].to_vec()),
-            selected_chunks: vec![0, 1, 2, 3],
-            chunk_hashes: vec![Buffer::from([0u8; 32].to_vec()); 4],
-            vdf_proof: MemoryHardVDFProof {
-                input_state: Buffer::from([0u8; 32].to_vec()),
-                output_state: Buffer::from([0u8; 32].to_vec()),
-                iterations: 1000,
-                memory_access_samples: Vec::new(),
-                computation_time_ms: 1000.0,
-                memory_usage_bytes: 256.0 * 1024.0 * 1024.0,
-            },
-            entropy: MultiSourceEntropy {
-                blockchain_entropy: Buffer::from([0u8; 32].to_vec()),
-                beacon_entropy: None,
-                local_entropy: Buffer::from([0u8; 32].to_vec()),
-                timestamp: crate::core::utils::get_current_timestamp(),
-                combined_hash: Buffer::from([0u8; 32].to_vec()),
-            },
-            commitment_hash: Buffer::from([0u8; 32].to_vec()),
-        })
+            selected_chunks,
+            chunk_hashes,
+            vdf_proof,
+            entropy,
+            commitment_hash: Buffer::from(commitment_hash.to_vec()),
+        };
+
+        if let Some(ref mut performance_logger) = self.performance_logger {
+            performance_logger.log_storage_performance("store_data", data.len() as u64, timer.elapsed_ms());
+        }
+
+        timer.finish();
+        
+        log_with_color(LogLevel::Info, "✅", "PROVER", 
+                      &format!("Data storage completed - Commitment: {}...", 
+                              &hex::encode(&commitment.commitment_hash)[..16]));
+
+        Ok(commitment)
     }
 
     /// Generate storage commitment for current block
@@ -280,30 +359,149 @@ impl ProofOfStorageProver {
     pub fn generate_commitment(&self, block_height: Option<u32>) -> Result<StorageCommitment> {
         let block_height = block_height.unwrap_or(0);
 
+        // Generate deterministic block hash for demo (callbacks are JsFunction, not callable directly)
+        let mut block_data = Vec::new();
+        block_data.extend_from_slice(&block_height.to_be_bytes());
+        block_data.extend_from_slice(&self.prover_key);
+        let hash = crate::core::utils::compute_blake3(&block_data);
+        let block_hash = Buffer::from(hash.to_vec());
+
+        // Use existing chain data if available (placeholder implementation)
+        let data_hash = if self.inner_chain.is_some() {
+            // Use prover key as data identifier for now
+            let hash = crate::core::utils::compute_blake3(&self.prover_key);
+            Buffer::from(hash.to_vec())
+        } else {
+            // Generate placeholder data hash
+            let placeholder_data = format!("block_{}_data", block_height);
+            let hash = crate::core::utils::compute_blake3(placeholder_data.as_bytes());
+            Buffer::from(hash.to_vec())
+        };
+
+        // Generate real entropy with blockchain randomness
+        let blockchain_entropy = Buffer::from(crate::core::utils::generate_deterministic_bytes(&block_hash, 32));
+        let local_entropy = Buffer::from(crate::core::utils::generate_secure_entropy(&self.prover_key).to_vec());
+        let combined_entropy = crate::core::utils::generate_multi_source_entropy(
+            &blockchain_entropy,
+            None,
+            &local_entropy,
+        );
+
+        // Select chunks deterministically
+        let total_chunks = if data_hash.len() > 0 { 16 } else { 4 }; // Estimate based on data
+        let selected_chunks = crate::core::utils::select_chunks_deterministic(
+            &combined_entropy,
+            total_chunks,
+            4,
+        );
+
+        // Generate chunk hashes (simulated for existing data)
+        let mut chunk_hashes = Vec::new();
+        for &chunk_idx in &selected_chunks {
+            let mut chunk_data = Vec::new();
+            chunk_data.extend_from_slice(&data_hash);
+            chunk_data.extend_from_slice(&chunk_idx.to_be_bytes());
+            let chunk_hash = crate::core::utils::compute_blake3(&chunk_data);
+            chunk_hashes.push(Buffer::from(chunk_hash.to_vec()));
+        }
+
+        // Compute VDF proof
+        let vdf_input = combined_entropy;
+        let (vdf_output, computation_time, memory_usage) = 
+            crate::core::utils::compute_memory_hard_vdf(&vdf_input, 1000, 256, 1)
+                .map_err(|e| Error::new(Status::GenericFailure, format!("VDF computation failed: {}", e)))?;
+
+        let vdf_proof = MemoryHardVDFProof {
+            input_state: Buffer::from(vdf_input.to_vec()),
+            output_state: Buffer::from(vdf_output.to_vec()),
+            iterations: 1000,
+            memory_access_samples: Vec::new(),
+            computation_time_ms: computation_time,
+            memory_usage_bytes: memory_usage,
+        };
+
+        let entropy = MultiSourceEntropy {
+            blockchain_entropy: blockchain_entropy.clone(),
+            beacon_entropy: None,
+            local_entropy: local_entropy.clone(),
+            timestamp: crate::core::utils::get_current_timestamp(),
+            combined_hash: Buffer::from(combined_entropy.to_vec()),
+        };
+
+        // Generate real commitment hash
+        let commitment_hash = crate::core::utils::compute_commitment_hash(
+            &self.prover_key,
+            &data_hash,
+            block_height as u64,
+            &block_hash,
+            &selected_chunks,
+            &chunk_hashes.iter().map(|h| h.to_vec()).collect::<Vec<_>>(),
+            &vdf_output,
+            &combined_entropy,
+        );
+
         Ok(StorageCommitment {
             prover_key: self.prover_key.clone(),
-            data_hash: Buffer::from([0u8; 32].to_vec()),
+            data_hash,
             block_height,
-            block_hash: Buffer::from([0u8; 32].to_vec()),
-            selected_chunks: vec![0, 1, 2, 3],
-            chunk_hashes: vec![Buffer::from([0u8; 32].to_vec()); 4],
-            vdf_proof: MemoryHardVDFProof {
-                input_state: Buffer::from([0u8; 32].to_vec()),
-                output_state: Buffer::from([0u8; 32].to_vec()),
-                iterations: 1000,
-                memory_access_samples: Vec::new(),
-                computation_time_ms: 1000.0,
-                memory_usage_bytes: 256.0 * 1024.0 * 1024.0,
-            },
-            entropy: MultiSourceEntropy {
-                blockchain_entropy: Buffer::from([0u8; 32].to_vec()),
-                beacon_entropy: None,
-                local_entropy: Buffer::from([0u8; 32].to_vec()),
-                timestamp: crate::core::utils::get_current_timestamp(),
-                combined_hash: Buffer::from([0u8; 32].to_vec()),
-            },
-            commitment_hash: Buffer::from([0u8; 32].to_vec()),
+            block_hash,
+            selected_chunks,
+            chunk_hashes,
+            vdf_proof,
+            entropy,
+            commitment_hash: Buffer::from(commitment_hash.to_vec()),
         })
+    }
+
+    /// Add commitment to chain and update tracker
+    #[napi]
+    pub fn add_commitment_to_chain(&mut self, chain_id: Buffer, commitment: StorageCommitment, file_name: String, file_size: f64) -> Result<()> {
+        if let Some(ref mut chain_tracker) = self.chain_tracker {
+            let chain_commitment = ChainCommitment {
+                prover_key: commitment.prover_key.clone(),
+                chain_id: chain_id.clone(),
+                data_hash: commitment.data_hash.clone(),
+                block_height: commitment.block_height as u64,
+                block_hash: commitment.block_hash.clone(),
+                file_hashes: vec![FileHashInfo {
+                    name: file_name,
+                    hash: commitment.data_hash.clone(),
+                    size: file_size as u64,
+                }],
+                chunk_hashes: commitment.chunk_hashes.clone(),
+                vdf_proof: commitment.vdf_proof.clone(),
+                entropy: commitment.entropy.clone(),
+                commitment_hash: commitment.commitment_hash.clone(),
+                prev_commitment_hash: None,
+                timestamp: chrono::Utc::now(),
+            };
+            
+            chain_tracker.add_chain_commitment(chain_id, chain_commitment);
+        }
+        
+        Ok(())
+    }
+
+    /// Increment block height and log progress
+    #[napi]
+    pub fn increment_block_height(&mut self) -> u32 {
+        if let Some(ref mut chain_tracker) = self.chain_tracker {
+            chain_tracker.increment_block_height() as u32
+        } else {
+            0
+        }
+    }
+
+    /// Generate unique chain ID for this prover
+    #[napi]
+    pub fn generate_chain_id(&self, file_name: String) -> Buffer {
+        let mut chain_input = Vec::new();
+        chain_input.extend_from_slice(self.prover_key.as_ref());
+        chain_input.extend_from_slice(file_name.as_bytes());
+        chain_input.extend_from_slice(&crate::core::utils::get_current_timestamp().to_be_bytes());
+        
+        let chain_id = crate::core::utils::sha256(&chain_input);
+        Buffer::from(chain_id.to_vec())
     }
 
     /// Create compact proof for efficient verification
@@ -395,18 +593,34 @@ impl ProofOfStorageProver {
 
     /// Register peer for network operations
     #[napi]
-    pub fn register_peer(&self, _peer_id: String, _peer_info: String) -> bool {
-        // This would call the peer_network.register_peer callback
-        // For now, return success for all peer registrations
-        true
+    pub fn register_peer(&mut self, peer_id: String, _peer_info: String) -> bool {
+        let peer_id_buffer = Buffer::from(peer_id.as_bytes().to_vec());
+        let success = true; // Simulate successful registration
+        
+        if let Some(ref mut network_logger) = self.network_logger {
+            network_logger.log_peer_registration(&peer_id_buffer, "prover", success);
+        }
+        
+        log_with_color(LogLevel::Info, "📝", "PROVER", 
+                      &format!("Peer registered: {}...", &peer_id[..std::cmp::min(8, peer_id.len())]));
+        
+        success
     }
 
     /// Issue availability challenge through network
     #[napi]
-    pub fn issue_availability_challenge(&self, target_prover: Buffer) -> String {
-        // This would call the availability_challenge.issue_availability_challenge callback
-        // Return a challenge ID for tracking
-        format!("challenge_{}", hex::encode(target_prover.as_ref()))
+    pub fn issue_availability_challenge(&mut self, target_prover: Buffer) -> String {
+        let challenge_id = format!("challenge_{}", hex::encode(&target_prover));
+        
+        if let Some(ref mut network_logger) = self.network_logger {
+            network_logger.log_availability_challenge_issued(&target_prover, &challenge_id);
+        }
+        
+        log_with_color(LogLevel::Info, "🎯", "PROVER", 
+                      &format!("Availability challenge issued to prover: {}...", 
+                              &hex::encode(&target_prover)[..8]));
+        
+        challenge_id
     }
 
     /// Validate chunk count against blockchain
@@ -429,9 +643,37 @@ impl ProofOfStorageProver {
 
     /// Update peer latency metrics
     #[napi]
-    pub fn update_peer_latency(&self, _peer_id: String, latency_ms: f64) -> bool {
-        // This would call the peer_network.update_peer_latency callback
-        latency_ms > 0.0 && latency_ms < 1000.0
+    pub fn update_peer_latency(&mut self, peer_id: String, latency_ms: f64) -> bool {
+        let peer_id_buffer = Buffer::from(peer_id.as_bytes().to_vec());
+        let success = latency_ms > 0.0 && latency_ms < 1000.0;
+        
+        if let Some(ref mut network_logger) = self.network_logger {
+            network_logger.log_peer_latency_update(&peer_id_buffer, latency_ms, success);
+        }
+        
+        success
+    }
+
+    /// Display current chain state for debugging
+    #[napi]
+    pub fn display_chain_state(&self) {
+        if let Some(ref chain_tracker) = self.chain_tracker {
+            for (chain_id, chain) in chain_tracker.get_all_chains() {
+                let chain_id_hex = hex::encode(&chain_id);
+                chain_tracker.display_chain_state(&chain_id_hex, chain);
+            }
+            chain_tracker.log_statistics();
+        }
+    }
+
+    /// Get logging statistics
+    #[napi]
+    pub fn get_logging_stats(&self) -> String {
+        if let Some(ref chain_tracker) = self.chain_tracker {
+            chain_tracker.get_statistics().to_string()
+        } else {
+            "{}".to_string()
+        }
     }
 }
 
@@ -445,6 +687,8 @@ impl ProofOfStorageProver {
 pub struct ProofOfStorageVerifier {
     verifier_key: Buffer,
     callbacks: VerifierCallbacks,
+    network_logger: Option<NetworkLogger>,
+    performance_logger: Option<ProofPerformanceLogger>,
 }
 
 #[napi]
@@ -454,16 +698,114 @@ impl ProofOfStorageVerifier {
     pub fn new(verifier_key: Buffer, callbacks: VerifierCallbacks) -> Result<Self> {
         validate_public_key(&verifier_key)?;
 
+        // Initialize logging system
+        let config = LoggerConfig::default();
+
         Ok(Self {
             verifier_key,
-            callbacks
+            callbacks,
+            network_logger: Some(NetworkLogger::new(config.clone())),
+            performance_logger: Some(ProofPerformanceLogger::new(config)),
         })
     }
 
     /// Verify compact storage proof
     #[napi]
-    pub fn verify_compact_proof(&self, proof: CompactStorageProof) -> bool {
-        !proof.chunk_proofs.is_empty()
+    pub fn verify_compact_proof(&mut self, proof: CompactStorageProof) -> bool {
+        let timer = ProofTimer::new("verify_compact_proof");
+        
+        // Real cryptographic verification
+        let mut verification_passed = true;
+        let mut failure_reason = String::new();
+
+        // 1. Verify prover key format
+        if proof.prover_key.len() != 32 {
+            verification_passed = false;
+            failure_reason = format!("Invalid prover key length: {}", proof.prover_key.len());
+        }
+
+        // 2. Verify VDF proof
+        if verification_passed {
+            let vdf_recompute_result = crate::core::utils::compute_memory_hard_vdf(
+                &proof.vdf_proof.input_state,
+                proof.vdf_proof.iterations,
+                256, // memory_kb
+                1,   // parallelism
+            );
+
+            match vdf_recompute_result {
+                Ok((recomputed_output, _, _)) => {
+                    if recomputed_output != proof.vdf_proof.output_state.as_ref() {
+                        verification_passed = false;
+                        failure_reason = "VDF proof verification failed".to_string();
+                    }
+                }
+                Err(_) => {
+                    verification_passed = false;
+                    failure_reason = "VDF recomputation failed".to_string();
+                }
+            }
+        }
+
+        // 3. Verify chunk proofs are not empty and properly formatted
+        if verification_passed && proof.chunk_proofs.is_empty() {
+            verification_passed = false;
+            failure_reason = "No chunk proofs provided".to_string();
+        }
+
+        // 4. Verify chunk proof hashes
+        if verification_passed {
+            for (i, chunk_proof) in proof.chunk_proofs.iter().enumerate() {
+                if chunk_proof.len() != 32 {
+                    verification_passed = false;
+                    failure_reason = format!("Invalid chunk proof {} length: {}", i, chunk_proof.len());
+                    break;
+                }
+            }
+        }
+
+        // 5. Verify commitment hash structure
+        if verification_passed && proof.commitment_hash.len() != 32 {
+            verification_passed = false;
+            failure_reason = format!("Invalid commitment hash length: {}", proof.commitment_hash.len());
+        }
+
+        // 6. Verify network position
+        if verification_passed && proof.network_position.len() != 32 {
+            verification_passed = false;
+            failure_reason = format!("Invalid network position length: {}", proof.network_position.len());
+        }
+
+        // 7. Verify timestamp is reasonable (within last 24 hours and not future)
+        if verification_passed {
+            let current_time = crate::core::utils::get_current_timestamp();
+            let twenty_four_hours = 24.0 * 60.0 * 60.0; // seconds
+            
+            if proof.timestamp > current_time + 300.0 {  // Allow 5 minute clock skew
+                verification_passed = false;
+                failure_reason = "Proof timestamp is in the future".to_string();
+            } else if current_time - proof.timestamp > twenty_four_hours {
+                verification_passed = false;
+                failure_reason = "Proof timestamp is too old".to_string();
+            }
+        }
+
+        // Log performance metrics
+        if let Some(ref mut performance_logger) = self.performance_logger {
+            performance_logger.log_vdf_performance(proof.vdf_proof.iterations, proof.vdf_proof.computation_time_ms);
+        }
+        
+        let elapsed = timer.finish();
+        
+        if verification_passed {
+            log_with_color(LogLevel::Info, "✅", "VERIFIER", 
+                          &format!("Compact proof verification: PASSED ({}ms)", elapsed));
+        } else {
+            log_with_color(LogLevel::Warn, "❌", "VERIFIER", 
+                          &format!("Compact proof verification: FAILED - {} ({}ms)", failure_reason, elapsed));
+        }
+        
+        verification_passed
     }
 
     /// Verify full storage proof
@@ -727,18 +1069,16 @@ pub fn generate_multi_source_entropy(
     block_hash: Buffer,
     beacon_data: Option<Buffer>,
 ) -> Result<MultiSourceEntropy> {
-    let local_entropy = Buffer::from((0..32).map(|_| rand::random::<u8>()).collect::<Vec<u8>>());
+    // Generate cryptographically secure local entropy
+    let local_entropy = Buffer::from(crate::core::utils::generate_secure_entropy(&block_hash).to_vec());
 
-    // Combine all entropy sources
-    let mut combined = Vec::new();
-    combined.extend_from_slice(block_hash.as_ref());
-    if let Some(beacon) = &beacon_data {
-        combined.extend_from_slice(beacon.as_ref());
-    }
-    combined.extend_from_slice(local_entropy.as_ref());
-
-    // Hash the combined entropy
-    let combined_hash = crate::core::utils::sha256(&combined);
+    // Use production entropy combination
+    let beacon_slice = beacon_data.as_ref().map(|b| b.as_ref());
+    let combined_hash = crate::core::utils::generate_multi_source_entropy(
+        &block_hash,
+        beacon_slice,
+        &local_entropy,
+    );
 
     Ok(MultiSourceEntropy {
         blockchain_entropy: block_hash,
@@ -752,13 +1092,17 @@ pub fn generate_multi_source_entropy(
 /// Create memory-hard VDF proof
 #[napi]
 pub fn create_memory_hard_vdf_proof(input: Buffer, iterations: u32) -> Result<MemoryHardVDFProof> {
+    let (output_state, computation_time, memory_usage) = 
+        crate::core::utils::compute_memory_hard_vdf(&input, iterations, 256, 1)
+            .map_err(|e| Error::new(Status::GenericFailure, format!("VDF computation failed: {}", e)))?;
+
     Ok(MemoryHardVDFProof {
         input_state: input,
-        output_state: Buffer::from([0u8; 32].to_vec()),
+        output_state: Buffer::from(output_state.to_vec()),
         iterations,
         memory_access_samples: Vec::new(),
-        computation_time_ms: iterations as f64,
-        memory_usage_bytes: 256.0 * 1024.0 * 1024.0,
+        computation_time_ms: computation_time,
+        memory_usage_bytes: memory_usage,
     })
 }
 
@@ -782,37 +1126,13 @@ pub fn select_chunks_from_entropy(
         ));
     }
 
-    // Use combined hash from entropy for deterministic selection
-    let entropy_bytes = entropy.combined_hash.as_ref();
-    let mut selected = Vec::new();
-    let mut used_chunks = std::collections::HashSet::new();
+    // Use production-grade deterministic chunk selection
+    let selected = crate::core::utils::select_chunks_deterministic(
+        &entropy.combined_hash,
+        total_chunks,
+        count,
+    );
 
-    // Use entropy to generate deterministic chunk indices
-    for i in 0..count {
-        let mut hash_input = Vec::new();
-        hash_input.extend_from_slice(entropy_bytes);
-        hash_input.extend_from_slice(&(i as u64).to_be_bytes());
-
-        let hash_result = crate::core::utils::sha256(&hash_input);
-        let chunk_seed = u32::from_be_bytes([
-            hash_result[0],
-            hash_result[1],
-            hash_result[2],
-            hash_result[3],
-        ]);
-
-        let mut chunk_index = chunk_seed % total_chunks;
-
-        // Ensure we don't select duplicate chunks
-        while used_chunks.contains(&chunk_index) {
-            chunk_index = (chunk_index + 1) % total_chunks;
-        }
-
-        selected.push(chunk_index);
-        used_chunks.insert(chunk_index);
-    }
-
-    selected.sort();
     Ok(selected)
 }
 
@@ -845,40 +1165,23 @@ pub fn verify_chunk_selection(
 /// Create storage commitment hash
 #[napi]
 pub fn create_commitment_hash(commitment: StorageCommitment) -> Buffer {
-    // Create hash input from commitment fields
-    let mut hash_input = Vec::new();
+    // Use production-grade commitment hash computation
+    let chunk_hashes_vec: Vec<Vec<u8>> = commitment.chunk_hashes
+        .iter()
+        .map(|h| h.to_vec())
+        .collect();
 
-    // Add all commitment fields to the hash input
-    hash_input.extend_from_slice(commitment.prover_key.as_ref());
-    hash_input.extend_from_slice(commitment.data_hash.as_ref());
-    hash_input.extend_from_slice(&commitment.block_height.to_be_bytes());
-    hash_input.extend_from_slice(commitment.block_hash.as_ref());
+    let commitment_hash = crate::core::utils::compute_commitment_hash(
+        &commitment.prover_key,
+        &commitment.data_hash,
+        commitment.block_height as u64,
+        &commitment.block_hash,
+        &commitment.selected_chunks,
+        &chunk_hashes_vec,
+        &commitment.vdf_proof.output_state,
+        &commitment.entropy.combined_hash,
+    );
 
-    // Add selected chunks
-    for &chunk in &commitment.selected_chunks {
-        hash_input.extend_from_slice(&chunk.to_be_bytes());
-    }
-
-    // Add chunk hashes
-    for chunk_hash in &commitment.chunk_hashes {
-        hash_input.extend_from_slice(chunk_hash.as_ref());
-    }
-
-    // Add VDF proof components
-    hash_input.extend_from_slice(commitment.vdf_proof.input_state.as_ref());
-    hash_input.extend_from_slice(commitment.vdf_proof.output_state.as_ref());
-    hash_input.extend_from_slice(&commitment.vdf_proof.iterations.to_be_bytes());
-
-    // Add entropy components
-    hash_input.extend_from_slice(commitment.entropy.blockchain_entropy.as_ref());
-    if let Some(beacon_entropy) = &commitment.entropy.beacon_entropy {
-        hash_input.extend_from_slice(beacon_entropy.as_ref());
-    }
-    hash_input.extend_from_slice(commitment.entropy.local_entropy.as_ref());
-    hash_input.extend_from_slice(&commitment.entropy.timestamp.to_be_bytes());
-
-    // Generate final hash
-    let commitment_hash = crate::core::utils::sha256(&hash_input);
     Buffer::from(commitment_hash.to_vec())
 }
 
