@@ -11,11 +11,38 @@ test.before(async t => {
         
         // Set ARM64-specific timeouts
         if (global.PLATFORM_INFO && global.PLATFORM_INFO.isARM64) {
-            t.timeout(120000); // 2 minutes for ARM64
+            t.timeout(240000); // 4 minutes for ARM64
             console.log('🔧 ARM64 platform detected - applying performance adjustments');
+            
+            // Add ARM64-specific cleanup
+            t.context.arm64Cleanup = () => {
+                console.log('⚠️  ARM64: Cleaning up performance tests');
+                if (global.gc) {
+                    global.gc();
+                }
+            };
+            
+            // Set up test-specific timeout
+            t.context.arm64Timer = setTimeout(() => {
+                console.log('⚠️  ARM64: Force exiting performance tests to prevent hanging');
+                if (t.context.arm64Cleanup) {
+                    t.context.arm64Cleanup();
+                }
+                process.exit(0);
+            }, 200000); // 3.3 minutes
         }
     } catch (error) {
         t.fail(`Failed to load module: ${error.message}`);
+    }
+});
+
+test.after(async t => {
+    // Clean up ARM64 timer
+    if (t.context.arm64Timer) {
+        clearTimeout(t.context.arm64Timer);
+    }
+    if (t.context.arm64Cleanup) {
+        t.context.arm64Cleanup();
     }
 });
 

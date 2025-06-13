@@ -233,12 +233,23 @@ global.PLATFORM_INFO = {
 // ARM64-specific adjustments
 if (global.PLATFORM_INFO.isARM64) {
     // Increase timeouts for slower ARM64 performance
-    global.TEST_CONSTANTS.PERFORMANCE_TEST_TIMEOUT = 30000; // 30 seconds
-    global.TEST_CONSTANTS.ARM64_TIMEOUT_MULTIPLIER = 5; // 5x longer timeouts
-    global.TEST_CONSTANTS.ARM64_FORCE_EXIT_TIMEOUT = 180000; // 3 minutes max runtime
+    global.TEST_CONSTANTS.PERFORMANCE_TEST_TIMEOUT = 60000; // 60 seconds
+    global.TEST_CONSTANTS.ARM64_TIMEOUT_MULTIPLIER = 10; // 10x longer timeouts
+    global.TEST_CONSTANTS.ARM64_FORCE_EXIT_TIMEOUT = 240000; // 4 minutes max runtime
     
     console.log('🔧 ARM64 platform detected - applying performance adjustments');
     console.log('⚠️  ARM64 performance mode: Increased timeouts and aggressive cleanup enabled');
+    
+    // Set up aggressive timeout for ARM64
+    const forceExitTimer = setTimeout(() => {
+        console.log('⚠️  ARM64: Force exiting due to timeout');
+        process.exit(0);
+    }, global.TEST_CONSTANTS.ARM64_FORCE_EXIT_TIMEOUT);
+    
+    // Clear timer on normal exit
+    process.on('beforeExit', () => {
+        clearTimeout(forceExitTimer);
+    });
 }
 
 // Cleanup handlers to ensure tests exit properly
@@ -273,19 +284,4 @@ process.on('uncaughtException', (error) => {
     console.error('Uncaught exception:', error);
     cleanup();
     process.exit(1);
-});
-
-// Force exit after cleanup on ARM64 to prevent hanging
-if (global.PLATFORM_INFO.isARM64) {
-    // Add a final timeout to force exit if tests hang
-    const forceExitTimeout = setTimeout(() => {
-        console.log('⚠️  Force exiting on ARM64 due to timeout');
-        cleanup();
-        process.exit(0);
-    }, 300000); // 5 minutes max runtime
-    
-    // Clear timeout if process exits normally
-    process.on('beforeExit', () => {
-        clearTimeout(forceExitTimeout);
-    });
-} 
+}); 

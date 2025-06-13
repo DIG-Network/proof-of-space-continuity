@@ -530,3 +530,64 @@ For security vulnerabilities, please email security@dignetwork.org with:
 ---
 
 **Production Ready**: This system has undergone comprehensive testing including attack simulation and is ready for production deployment in decentralized storage networks.
+
+## Testing
+
+### Running Tests
+
+The project includes a platform-aware test runner that automatically detects your architecture and applies appropriate settings:
+
+```bash
+npm test
+```
+
+### Platform-Specific Testing
+
+#### ARM64/Apple Silicon
+ARM64 platforms (Apple Silicon, ARM64 Linux) require extended timeouts due to performance characteristics:
+
+```bash
+# Automatic detection (recommended)
+npm test
+
+# Manual ARM64 mode
+npm run test:arm64
+
+# Performance tests only (ARM64)
+npm run test:performance:arm64
+```
+
+**ARM64 Adjustments:**
+- ⏱️ Extended timeouts (10 minutes vs 5 minutes)
+- 🔄 Reduced concurrency (1 vs 2 threads)
+- 🧹 Aggressive cleanup and force-exit mechanisms
+- 📊 Performance baseline adjustments
+
+#### x64/Standard Platforms
+Standard platforms use optimized settings:
+
+```bash
+# Standard test suite
+npm test
+
+# Specific test categories
+npm run test:unit
+npm run test:integration
+npm run test:attack
+npm run test:performance
+```
+
+### Test Categories
+
+- **Unit Tests**: Core functionality and utilities
+- **Integration Tests**: End-to-end workflows and multi-chain systems
+- **Attack Tests**: Security validation and attack mitigation
+- **Performance Tests**: Timing requirements and benchmarks
+
+### Troubleshooting
+
+If tests hang on ARM64:
+1. The test runner includes automatic timeout and force-exit mechanisms
+2. Tests will automatically exit after 4 minutes on ARM64
+3. Use `npm run test:performance:arm64` for performance-specific testing
+4. Check console output for ARM64-specific adjustments

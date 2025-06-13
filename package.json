@@ -26,12 +26,15 @@
     "files": [
       "__test__/**/*.test.js"
     ],
-    "timeout": "2m",
-    "concurrency": 2,
+    "timeout": "5m",
+    "concurrency": 1,
     "verbose": true,
     "require": [
       "./__test__/setup.js"
-    ]
+    ],
+    "environmentVariables": {
+      "NODE_ENV": "test"
+    }
   },
   "engines": {
     "node": ">= 10"
@@ -41,11 +44,13 @@
     "build": "napi build --platform --release",
     "build:debug": "napi build --platform",
     "prepublishOnly": "napi prepublish -t npm",
-    "test": "ava",
+    "test": "node test-runner.js",
+    "test:arm64": "ava --timeout=10m --concurrency=1 --verbose",
     "test:unit": "ava __test__/unit/**/*.test.js",
     "test:integration": "ava __test__/integration/**/*.test.js",
     "test:attack": "ava __test__/attack/**/*.test.js",
     "test:performance": "ava __test__/performance/**/*.test.js",
+    "test:performance:arm64": "ava __test__/performance/**/*.test.js --timeout=10m --concurrency=1",
     "test:coverage": "c8 ava",
     "test:watch": "ava --watch",
     "version": "napi version",
