@@ -25,7 +25,6 @@ rand = "0.7"       # Random number generation for entropy
 rand_chacha = "0.2" # ChaCha20 RNG for deterministic randomness
 getrandom = "0.1"   # OS random number generation
 ed25519-dalek = "1.0.1" # Ed25519 signatures for prover authentication  
-argon2 = "0.3"     # Memory-hard function for VDF implementations
 hmac = "0.10"      # HMAC for key derivation
 
 # Fast Checksums & File Operations
